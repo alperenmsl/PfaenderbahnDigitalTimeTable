@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/data.ts","./src/employees.tsx","./src/main.tsx","./src/supabaseclient.ts","./src/team.tsx","./src/types.ts","./src/vite-env.d.ts","./src/components/sidebar.tsx","./src/pages/bloverview.tsx","./src/pages/sickleaveupload.tsx"],"version":"5.9.3"}
