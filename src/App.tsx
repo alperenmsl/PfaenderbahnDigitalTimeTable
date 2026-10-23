@@ -1,18 +1,16 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabaseClient";
+import Login from "./pages/Login";
 import SickLeaveUpload from "./pages/SickLeaveUpload";
-import BertlOverview from "./pages/BLOverview";
+import BLOverview from "./pages/BLOverview";
 import {
   EMPLOYEES,
   SHIFT_COLORS,
-  generateDates,
   generateWeekDates,
   getMondayOfDate,
   addWeeks,
   formatDateDisplay,
-  getWeekday,
-  INITIAL_SCHEDULE,
-  INITIAL_EVENTS,
   formatDate,
 } from "./data";
 import {
@@ -23,735 +21,437 @@ import {
   Employee,
 } from "./types";
 
-const ADMIN_PASSWORD = "berthold2026";
+type Profile = { id: string; full_name: string; role: "employee" | "planner" };
 
-type AuthMode = null | "employee" | "admin";
-
-interface AuthState {
-  mode: AuthMode;
-  employeeId?: string;
-  employeeName?: string;
-}
-
-function toISODate(dmy: string): string {
-  if (!dmy) return "";
+/* ---------- Hilfsfunktionen ---------- */
+// App-intern: dd/mm/yyyy  |  Datenbank: yyyy-mm-dd
+const toISO = (dmy: string) => {
   const [d, m, y] = dmy.split("/");
   return `${y}-${m}-${d}`;
-}
-function fromISODate(iso: string): string {
-  if (!iso) return "";
+};
+const fromISO = (iso: string) => {
   const [y, m, d] = iso.split("-");
   return `${d}/${m}/${y}`;
-}
+};
+const getInitials = (name: string) =>
+  name
+    .split(" ")
+    .map((n) => n[0])
+    .slice(0, 2)
+    .join("");
+
+const WEEKDAYS = [
+  "Sonntag",
+  "Montag",
+  "Dienstag",
+  "Mittwoch",
+  "Donnerstag",
+  "Freitag",
+  "Samstag",
+];
+const MONTHS = [
+  "Januar",
+  "Februar",
+  "März",
+  "April",
+  "Mai",
+  "Juni",
+  "Juli",
+  "August",
+  "September",
+  "Oktober",
+  "November",
+  "Dezember",
+];
+const getWeekdayLong = (date: string) => {
+  const [d, m, y] = date.split("/").map(Number);
+  return WEEKDAYS[new Date(y, m - 1, d).getDay()];
+};
 
 function Avatar({ emp, size = 42 }: { emp?: Employee; size?: number }) {
+  const [broken, setBroken] = useState(false);
   if (!emp) return null;
-  const style: React.CSSProperties = {
-    width: size,
-    height: size,
-  };
-  if (emp.avatarUrl) {
-    return (
-      <div className="avatar2" style={style}>
+  const showImg = emp.avatarUrl && !broken;
+  return (
+    <div
+      className="avatar2"
+      style={{
+        width: size,
+        height: size,
+        background: showImg ? undefined : "#cbd5e1",
+        color: "#0f172a",
+      }}
+    >
+      {showImg ? (
         <img
           src={emp.avatarUrl}
           alt={emp.name}
           className="avatar-img"
           loading="lazy"
-          onError={(e) => {
-            (e.currentTarget as HTMLImageElement).style.display = "none";
-          }}
+          onError={() => setBroken(true)}
         />
-      </div>
-    );
-  }
-  const colors: Record<string, { bg: string; text: string }> = {
-    "1": { bg: "#EF4444", text: "#fff" },
-    "2": { bg: "#DC2626", text: "#fff" },
-    "4": { bg: "#E11D48", text: "#fff" },
-    "5": { bg: "#F59E0B", text: "#111" },
-    "6": { bg: "#EAB308", text: "#111" },
-    "7": { bg: "#FACC15", text: "#111" },
-    "3": { bg: "#FF8C00", text: "#fff" },
-    "8": { bg: "#22C55E", text: "#fff" },
-    "9": { bg: "#16A34A", text: "#fff" },
-    "10": { bg: "#15803D", text: "#fff" },
-    "11": { bg: "#EC4899", text: "#fff" },
-    "12": { bg: "#7C3AED", text: "#fff" },
-    "13": { bg: "#A78BFA", text: "#fff" },
-    "14": { bg: "#D97706", text: "#fff" },
-    "15": { bg: "#B45309", text: "#fff" },
-    "16": { bg: "#92400E", text: "#fff" },
-    "17": { bg: "#0EA5E9", text: "#fff" },
-  };
-  const c = colors[emp.id] || { bg: "#cbd5e1", text: "#0f172a" };
-  return (
-    <div
-      className="avatar2"
-      style={{ ...style, background: c.bg, color: c.text }}
-    >
-      {emp.name
-        .split(" ")
-        .map((n) => n[0])
-        .slice(0, 2)
-        .join("")}
+      ) : (
+        getInitials(emp.name)
+      )}
     </div>
   );
 }
 
-function getInitials(name: string) {
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .slice(0, 2)
-    .join("");
+function Icon({ children }: { children: React.ReactNode }) {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {children}
+    </svg>
+  );
 }
 
+const pillStyle = (entry: ShiftEntry, compact = false): React.CSSProperties => {
+  const ci = SHIFT_COLORS[entry.color];
+  const isFrei = entry.color === "frei" && !entry.note;
+  const base: React.CSSProperties = compact
+    ? {
+        fontSize: 11.5,
+        padding: "6px 8px",
+        borderRadius: 9,
+        width: "100%",
+        textAlign: "center",
+        fontWeight: 600,
+        lineHeight: 1.3,
+        border: "1px solid transparent",
+      }
+    : {};
+  return isFrei
+    ? {
+        ...base,
+        background: "#F2F5FA",
+        color: "#8E97A9",
+        borderColor: "#EEF0F4",
+      }
+    : {
+        ...base,
+        borderColor: ci.bg,
+        background: ci.bg + "1A",
+        color: ci.text === "#FFFFFF" ? ci.bg : ci.text,
+      };
+};
+const pillLabel = (entry: ShiftEntry, freiText = "Frei") =>
+  entry.note
+    ? entry.note
+    : entry.color === "frei"
+      ? freiText
+      : SHIFT_COLORS[entry.color].label;
+
+/* ---------- App ---------- */
 function App() {
-  const [weekMonday, setWeekMonday] = useState(() => {
-    const m = getMondayOfDate(new Date()); // Nimmt jetzt automatisch den heutigen Tag
-    return formatDate(m);
-  });
-  const [dates, setDates] = useState<string[]>(
-    () => generateWeekDates(formatDate(getMondayOfDate(new Date()))), // Hier ebenfalls
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profiles, setProfiles] = useState<{ id: string; full_name: string }[]>(
+    [],
   );
 
-  const [schedule, setSchedule] = useState<ScheduleData>(() => {
-    const saved = localStorage.getItem("pfanderbahn_schedule");
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {}
-    }
-    return INITIAL_SCHEDULE;
-  });
-  const [events, setEvents] = useState<DayEvent[]>(() => {
-    const saved = localStorage.getItem("pfanderbahn_events");
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {}
-    }
-    return INITIAL_EVENTS;
-  });
+  const [weekMonday, setWeekMonday] = useState(() =>
+    formatDate(getMondayOfDate(new Date())),
+  );
+  const dates = useMemo(() => generateWeekDates(weekMonday), [weekMonday]);
 
-  const [auth, setAuth] = useState<AuthState>(() => {
-    const saved = localStorage.getItem("pfanderbahn_auth");
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {}
-    }
-    return { mode: null };
-  });
+  const [schedule, setSchedule] = useState<ScheduleData>({});
+  const [events, setEvents] = useState<DayEvent[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
 
-  const [selectedEmployee, setSelectedEmployee] = useState<string>("");
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [loginError, setLoginError] = useState("");
-  const [showAdminPassword, setShowAdminPassword] = useState(false);
-  const [adminPasswordInput, setAdminPasswordInput] = useState("");
-  const [unreadCount, setUnreadCount] = useState<number>(0);
+  const [activeNav, setActiveNav] = useState("overview");
   const [showAllPlan, setShowAllPlan] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
+
   const [editingCell, setEditingCell] = useState<{
     empId: string;
     date: string;
   } | null>(null);
+  const [noteInput, setNoteInput] = useState("");
   const [showEventModal, setShowEventModal] = useState(false);
-  const [eventDraft, setEventDraft] = useState<{
-    id: string | null;
-    date: string;
-    title: string;
-    description: string;
-  }>({
-    id: null,
+  const [eventDraft, setEventDraft] = useState({
+    id: null as string | null,
     date: "",
     title: "",
     description: "",
   });
-  const [noteInput, setNoteInput] = useState("");
-  const [currentTime, setCurrentTime] = useState(new Date());
-  const [activeNav, setActiveNav] = useState("overview");
 
+  const [pwNew, setPwNew] = useState("");
+  const [pwMsg, setPwMsg] = useState<{ ok: boolean; text: string } | null>(
+    null,
+  );
+
+  const isPlanner = profile?.role === "planner";
+
+  // Mitarbeiterliste: feste Reihenfolge/Avatare aus data.ts, ID aus der Datenbank
+  const employees: Employee[] = useMemo(
+    () =>
+      EMPLOYEES.flatMap((e) => {
+        const p = profiles.find((x) => x.full_name === e.name);
+        return p ? [{ ...e, id: p.id }] : [];
+      }),
+    [profiles],
+  );
+  const me = employees.find((e) => e.id === session?.user.id);
+
+  /* --- Uhr --- */
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
 
+  /* --- Auth-Sitzung --- */
   useEffect(() => {
-    localStorage.setItem("pfanderbahn_schedule", JSON.stringify(schedule));
-  }, [schedule]);
-
-  useEffect(() => {
-    localStorage.setItem("pfanderbahn_events", JSON.stringify(events));
-  }, [events]);
-
-  useEffect(() => {
-    localStorage.setItem("pfanderbahn_auth", JSON.stringify(auth));
-  }, [auth]);
-
-  const loadDataFromSupabase = async () => {
-    try {
-      const { data: scheduleData, error: scheduleError } = await supabase
-        .from("schedule")
-        .select("*");
-      if (!scheduleError && scheduleData && scheduleData.length > 0) {
-        const parsed: ScheduleData = {};
-        for (const row of scheduleData) {
-          if (!parsed[row.employee_id]) parsed[row.employee_id] = {};
-          parsed[row.employee_id][row.date] = {
-            color: row.shift_color as ShiftColor,
-            note: row.note || undefined,
-          };
-        }
-        setSchedule(parsed);
-      }
-
-      const { data: eventsData, error: eventsError } = await supabase
-        .from("events")
-        .select("*");
-      if (!eventsError && eventsData && eventsData.length > 0) {
-        setEvents(
-          eventsData.map((ev) => ({
-            id: String(ev.id),
-            date: ev.date,
-            title: ev.title,
-            description: ev.description || undefined,
-          })),
-        );
-      }
-    } catch (e) {
-      console.warn("Supabase Daten konnten nicht geladen werden:", e);
-    }
-  };
-
-  const checkUnreadSickLeaves = async () => {
-    try {
-      const { data, error } = await supabase.from("sick_leaves").select("id");
-
-      if (!error && data) {
-        const totalCount = data.length;
-        // Hole die Anzahl, die Bertl beim letzten Mal gesehen hat
-        const lastSeenCountStr = localStorage.getItem(
-          "pfanderbahn_last_seen_count",
-        );
-        const lastSeenCount = lastSeenCountStr
-          ? parseInt(lastSeenCountStr, 10)
-          : 0;
-
-        // Berechne, wie viele NEUE seit dem letzten Klick dazugekommen sind
-        const unread = totalCount - lastSeenCount;
-        setUnreadCount(unread > 0 ? unread : 0);
-      }
-    } catch (e) {
-      console.warn("Konnte Krankenzettel nicht prüfen", e);
-    }
-  };
-
-  const saveScheduleToSupabase = async () => {
-    try {
-      const rows: any[] = [];
-      for (const empId of Object.keys(schedule)) {
-        for (const date of Object.keys(schedule[empId])) {
-          const entry = schedule[empId][date];
-          if (entry.color !== "frei" || entry.note) {
-            rows.push({
-              employee_id: empId,
-              date,
-              shift_color: entry.color,
-              note: entry.note || null,
-            });
-          }
-        }
-      }
-      await supabase
-        .from("schedule")
-        .upsert(rows, { onConflict: "employee_id,date" });
-    } catch (e) {
-      console.warn("Supabase Speichern fehlgeschlagen:", e);
-    }
-  };
-
-  useEffect(() => {
-    loadDataFromSupabase();
-    checkUnreadSickLeaves();
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setAuthLoading(false);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) =>
+      setSession(s),
+    );
+    return () => sub.subscription.unsubscribe();
   }, []);
 
-  const handleWeekChange = (offset: number) => {
-    const newMonday = addWeeks(weekMonday, offset);
-    setWeekMonday(newMonday);
-    setDates(generateWeekDates(newMonday));
-  };
-
-  const handleGoToday = () => {
-    const m = getMondayOfDate(new Date());
-    const md = formatDate(m);
-    setWeekMonday(md);
-    setDates(generateWeekDates(md));
-  };
-
-  const handleEmployeeLogin = async () => {
-    if (!selectedEmployee) {
-      setLoginError("Bitte wähle deinen Namen aus.");
+  /* --- Profile nach Login laden --- */
+  useEffect(() => {
+    if (!session) {
+      setProfile(null);
+      setProfiles([]);
       return;
     }
-    setIsLoggingIn(true);
-    setLoginError("");
+    (async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("id, full_name, role")
+        .eq("active", true);
+      const list = (data ?? []) as Profile[];
+      setProfiles(list.map((p) => ({ id: p.id, full_name: p.full_name })));
+      setProfile(list.find((p) => p.id === session.user.id) ?? null);
+    })();
+  }, [session]);
 
-    const emp = EMPLOYEES.find((e) => e.id === selectedEmployee);
-    if (!emp) {
-      setLoginError("Mitarbeiter nicht gefunden.");
-      setIsLoggingIn(false);
-      return;
-    }
-
-    if (emp.isAdmin) {
-      setShowAdminPassword(true);
-      setIsLoggingIn(false);
-      return;
-    }
-
-    await new Promise((r) => setTimeout(r, 500));
-
-    const m = getMondayOfDate(new Date());
-    const md = formatDate(m);
-    setWeekMonday(md);
-    setDates(generateWeekDates(md));
-
-    setAuth({
-      mode: "employee",
-      employeeId: emp.id,
-      employeeName: emp.name,
+  /* --- Dienstplan + Events der angezeigten Woche --- */
+  const loadWeek = useCallback(async () => {
+    const from = toISO(dates[0]);
+    const to = toISO(dates[6]);
+    const [{ data: sch }, { data: ev }] = await Promise.all([
+      supabase
+        .from("schedule")
+        .select("employee_id, date, shift_color, note")
+        .gte("date", from)
+        .lte("date", to),
+      supabase
+        .from("events")
+        .select("id, date, title, description")
+        .gte("date", from)
+        .lte("date", to),
+    ]);
+    const parsed: ScheduleData = {};
+    (sch ?? []).forEach((r) => {
+      const d = fromISO(r.date);
+      (parsed[r.employee_id] ??= {})[d] = {
+        color: r.shift_color as ShiftColor,
+        note: r.note || undefined,
+      };
     });
-    setSelectedEmployee("");
-    setIsLoggingIn(false);
-  };
+    setSchedule(parsed);
+    setEvents(
+      (ev ?? []).map((e) => ({
+        id: e.id,
+        date: fromISO(e.date),
+        title: e.title,
+        description: e.description || undefined,
+      })),
+    );
+  }, [dates]);
 
-  const handleAdminPasswordSubmit = () => {
-    if (adminPasswordInput === ADMIN_PASSWORD) {
-      const emp = EMPLOYEES.find((e) => e.id === selectedEmployee);
-      if (emp) {
-        setAuth({
-          mode: "admin",
-          employeeId: emp.id,
-          employeeName: emp.name,
-        });
-      }
-      setShowAdminPassword(false);
-      setAdminPasswordInput("");
-      setSelectedEmployee("");
-      setLoginError("");
-    } else {
-      setLoginError("Falsches Admin-Passwort.");
-    }
-  };
+  useEffect(() => {
+    if (session) loadWeek();
+  }, [session, loadWeek]);
 
-  const handleLogout = () => {
-    setAuth({ mode: null });
-    setShowAdminPassword(false);
-    setAdminPasswordInput("");
-    setSelectedEmployee("");
-    setLoginError("");
+  /* --- Ungelesene Krankmeldungen (nur Planer) --- */
+  const refreshUnread = useCallback(async () => {
+    if (!isPlanner) return;
+    const { count } = await supabase
+      .from("absences")
+      .select("id", { count: "exact", head: true })
+      .eq("type", "sick")
+      .eq("status", "submitted");
+    setUnreadCount(count ?? 0);
+  }, [isPlanner]);
+
+  useEffect(() => {
+    refreshUnread();
+  }, [refreshUnread]);
+
+  /* --- Navigation --- */
+  const handleWeekChange = (offset: number) =>
+    setWeekMonday(addWeeks(weekMonday, offset));
+  const handleGoToday = () =>
+    setWeekMonday(formatDate(getMondayOfDate(new Date())));
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setActiveNav("overview");
     setShowAllPlan(false);
   };
 
-  const getCell = (empId: string, date: string): ShiftEntry => {
-    return schedule[empId]?.[date] || { color: "frei" };
-  };
+  const getCell = (empId: string, date: string): ShiftEntry =>
+    schedule[empId]?.[date] || { color: "frei" };
 
-  const isAdminLoggedIn = auth.mode === "admin";
-
+  /* --- Zelle bearbeiten (nur Planer; die Datenbank erzwingt das zusätzlich) --- */
   const handleCellClick = (emp: Employee, date: string) => {
-    if (!isAdminLoggedIn) return;
+    if (!isPlanner) return;
     setEditingCell({ empId: emp.id, date });
     setNoteInput(getCell(emp.id, date).note || "");
   };
 
-  const handleColorChange = (color: ShiftColor) => {
+  const saveCell = async (color: ShiftColor, note: string) => {
     if (!editingCell) return;
+    const { empId, date } = editingCell;
+    const cleanNote = note.trim();
+    const isEmpty = color === "frei" && !cleanNote;
+
+    const { error } = isEmpty
+      ? await supabase
+          .from("schedule")
+          .delete()
+          .eq("employee_id", empId)
+          .eq("date", toISO(date))
+      : await supabase.from("schedule").upsert(
+          {
+            employee_id: empId,
+            date: toISO(date),
+            shift_color: color,
+            note: cleanNote || null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "employee_id,date" },
+        );
+    if (error) return alert("Speichern fehlgeschlagen: " + error.message);
+
     setSchedule((prev) => {
-      const next = { ...prev };
-      if (!next[editingCell.empId]) next[editingCell.empId] = {};
-      next[editingCell.empId] = {
-        ...next[editingCell.empId],
-        [editingCell.date]: {
-          color,
-          note: noteInput || undefined,
-        },
-      };
+      const next = { ...prev, [empId]: { ...(prev[empId] || {}) } };
+      if (isEmpty) delete next[empId][date];
+      else next[empId][date] = { color, note: cleanNote || undefined };
       return next;
     });
+    setEditingCell(null);
+    setNoteInput("");
   };
 
-  const handleSaveNote = () => {
-    if (!editingCell) return;
-    setSchedule((prev) => {
-      const next = { ...prev };
-      if (!next[editingCell.empId]) next[editingCell.empId] = {};
-      const current = next[editingCell.empId][editingCell.date] || {
-        color: "frei",
-      };
-      next[editingCell.empId] = {
-        ...next[editingCell.empId],
-        [editingCell.date]: {
-          ...current,
-          note: noteInput || undefined,
-        },
-      };
-      return next;
-    });
-    saveScheduleToSupabase();
-  };
-
+  /* --- Events --- */
   const openNewEventModal = () => {
     setEventDraft({ id: null, date: "", title: "", description: "" });
     setShowEventModal(true);
   };
-
   const openEditEventModal = (ev: DayEvent) => {
     setEventDraft({
       id: ev.id,
-      date: ev.date,
+      date: toISO(ev.date),
       title: ev.title,
       description: ev.description || "",
     });
     setShowEventModal(true);
   };
-
   const handleSaveEvent = async () => {
-    if (!eventDraft.date || !eventDraft.title) return;
-    if (eventDraft.id) {
-      setEvents((prev) =>
-        prev.map((e) =>
-          e.id === eventDraft.id
-            ? {
-                ...e,
-                date: eventDraft.date,
-                title: eventDraft.title,
-                description: eventDraft.description,
-              }
-            : e,
-        ),
-      );
-      try {
-        await supabase
-          .from("events")
-          .update({
-            date: eventDraft.date,
-            title: eventDraft.title,
-            description: eventDraft.description || null,
-          })
-          .eq("id", eventDraft.id);
-      } catch {}
-    } else {
-      const event: DayEvent = {
-        id: Date.now().toString(),
-        date: eventDraft.date,
-        title: eventDraft.title,
-        description: eventDraft.description,
-      };
-      setEvents((prev) => [...prev, event]);
-      try {
-        await supabase.from("events").insert({
-          id: parseInt(event.id),
-          date: event.date,
-          title: event.title,
-          description: event.description || null,
-        });
-      } catch {}
-    }
+    if (!eventDraft.date || !eventDraft.title.trim()) return;
+    const row = {
+      date: eventDraft.date,
+      title: eventDraft.title.trim(),
+      description: eventDraft.description || null,
+    };
+    const { error } = eventDraft.id
+      ? await supabase.from("events").update(row).eq("id", eventDraft.id)
+      : await supabase.from("events").insert(row);
+    if (error) return alert("Speichern fehlgeschlagen: " + error.message);
     setShowEventModal(false);
-    setEventDraft({ id: null, date: "", title: "", description: "" });
+    loadWeek();
   };
-
   const handleDeleteEvent = async (id: string) => {
-    setEvents((prev) => prev.filter((e) => e.id !== id));
-    if (eventDraft.id === id) {
-      setShowEventModal(false);
-      setEventDraft({ id: null, date: "", title: "", description: "" });
-    }
-    try {
-      await supabase.from("events").delete().eq("id", id);
-    } catch {}
+    const { error } = await supabase.from("events").delete().eq("id", id);
+    if (error) return alert("Löschen fehlgeschlagen: " + error.message);
+    setShowEventModal(false);
+    loadWeek();
+  };
+  const getEventsForDate = (date: string) =>
+    events.filter((e) => e.date === date);
+
+  /* --- PIN ändern --- */
+  const handleChangePw = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pwNew.length < 6)
+      return setPwMsg({ ok: false, text: "Mindestens 6 Zeichen." });
+    const { error } = await supabase.auth.updateUser({ password: pwNew });
+    if (error) return setPwMsg({ ok: false, text: error.message });
+    setPwNew("");
+    setPwMsg({ ok: true, text: "PIN wurde geändert." });
   };
 
-  const getEventsForDate = (date: string): DayEvent[] => {
-    return events.filter((e) => e.date === date);
-  };
-
+  /* --- Anzeige-Texte --- */
   const currentWeekRange = (() => {
-    if (dates.length === 0) return "";
-    const first = dates[0];
-    const last = dates[dates.length - 1];
-    const [fd, fm, fy] = first.split("/");
-    const [ld, lm, ly] = last.split("/");
-    const months = [
-      "Januar",
-      "Februar",
-      "März",
-      "April",
-      "Mai",
-      "Juni",
-      "Juli",
-      "August",
-      "September",
-      "Oktober",
-      "November",
-      "Dezember",
-    ];
-    if (fm === lm && fy === ly) {
-      return `${fd}. – ${ld}. ${months[parseInt(fm) - 1]} ${fy}`;
-    }
+    const [fd, fm, fy] = dates[0].split("/");
+    const [ld, lm, ly] = dates[6].split("/");
+    if (fm === lm && fy === ly)
+      return `${fd}. – ${ld}. ${MONTHS[parseInt(fm) - 1]} ${fy}`;
     return `${fd}.${fm}. – ${ld}.${lm}.${ly}`;
   })();
-
-  const formatTime = (d: Date) => {
-    return d.toLocaleTimeString("de-DE", {
+  const formatTime = (d: Date) =>
+    d.toLocaleTimeString("de-DE", {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
     });
-  };
-
-  const getWeekdayLong = (date: string) => {
-    const days = [
-      "Sonntag",
-      "Montag",
-      "Dienstag",
-      "Mittwoch",
-      "Donnerstag",
-      "Freitag",
-      "Samstag",
-    ];
-    const [day, month, year] = date.split("/").map(Number);
-    const d = new Date(year, month - 1, day);
-    return days[d.getDay()];
-  };
-
-  const handleExport = () => {
-    alert("Export-Funktion kommt bald!");
-  };
-
-  if (!auth.mode) {
-    return (
-      <div className="fullscreen-login">
-        <div className="login-blur-card">
-          <div className="login-brand-row">
-            <div className="login-brand-icon" />
-            <div className="login-brand-title">OPTIVIO</div>
-          </div>
-          <div className="login-brand-sub">Pfänderbahn Mitarbeiter Portal</div>
-
-          {!showAdminPassword ? (
-            <>
-              <div className="login-welcome">Willkommen zurück</div>
-              <div className="login-desc-white">
-                Wähle deinen Namen aus, um auf deinen persönlichen Dienstplan
-                zuzugreifen.
-              </div>
-
-              <div style={{ marginBottom: 6 }}>
-                <label className="field-label-white">
-                  Mitarbeiter auswählen
-                </label>
-                <select
-                  className="select-transparent"
-                  value={selectedEmployee}
-                  onChange={(e) => {
-                    setSelectedEmployee(e.target.value);
-                    setLoginError("");
-                  }}
-                >
-                  <option value="">— Bitte wählen —</option>
-                  {EMPLOYEES.map((emp) => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.name}
-                      {emp.isAdmin ? " - (BL)" : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {loginError && (
-                <div
-                  style={{
-                    marginTop: 10,
-                    padding: "10px 14px",
-                    background: "rgba(220, 38, 38, 0.22)",
-                    border: "1px solid rgba(254, 202, 202, 0.45)",
-                    color: "#fff",
-                    borderRadius: 12,
-                    fontSize: 13,
-                    fontWeight: 600,
-                  }}
-                >
-                  {loginError}
-                </div>
-              )}
-
-              <button
-                className="btn-login-glow"
-                onClick={handleEmployeeLogin}
-                disabled={isLoggingIn}
-              >
-                {isLoggingIn ? (
-                  <>
-                    <span className="loading-spinner" />
-                    Anmelden...
-                  </>
-                ) : (
-                  <>
-                    Anmelden
-                    <svg
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <line x1="5" y1="12" x2="19" y2="12" />
-                      <polyline points="12 5 19 12 12 19" />
-                    </svg>
-                  </>
-                )}
-              </button>
-            </>
-          ) : (
-            <>
-              <div className="login-welcome">Admin-Anmeldung 🔐</div>
-              <div className="login-desc-white">
-                Als Administrator ist ein Passwort erforderlich. Gib das
-                Admin-Passwort ein, um den Dienstplan bearbeiten zu können.
-              </div>
-
-              <div style={{ marginBottom: 6 }}>
-                <label className="field-label-white">Admin-Passwort</label>
-                <input
-                  type="password"
-                  className="select-transparent"
-                  placeholder="••••••••"
-                  value={adminPasswordInput}
-                  onChange={(e) => {
-                    setAdminPasswordInput(e.target.value);
-                    setLoginError("");
-                  }}
-                  onKeyDown={(e) =>
-                    e.key === "Enter" && handleAdminPasswordSubmit()
-                  }
-                  autoFocus
-                  style={{ paddingRight: 16 }}
-                />
-              </div>
-
-              {loginError && (
-                <div
-                  style={{
-                    marginTop: 10,
-                    padding: "10px 14px",
-                    background: "rgba(220, 38, 38, 0.22)",
-                    border: "1px solid rgba(254, 202, 202, 0.45)",
-                    color: "#fff",
-                    borderRadius: 12,
-                    fontSize: 13,
-                    fontWeight: 600,
-                  }}
-                >
-                  {loginError}
-                </div>
-              )}
-
-              <div
-                style={{
-                  display: "flex",
-                  gap: 10,
-                  marginTop: 10,
-                }}
-              >
-                <button
-                  className="btn-login-glow"
-                  style={{
-                    background: "rgba(255,255,255,0.15)",
-                    color: "#fff",
-                    boxShadow: "none",
-                    border: "1px solid rgba(255,255,255,0.2)",
-                    marginTop: 12,
-                  }}
-                  onClick={() => {
-                    setShowAdminPassword(false);
-                    setAdminPasswordInput("");
-                    setLoginError("");
-                  }}
-                >
-                  Zurück
-                </button>
-                <button
-                  className="btn-login-glow"
-                  onClick={handleAdminPasswordSubmit}
-                >
-                  Anmelden
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                    <polyline points="12 5 19 12 12 19" />
-                  </svg>
-                </button>
-              </div>
-            </>
-          )}
-
-          <div className="login-foot-white">
-            © 2026 OPTIVIO • Pfänderbahn Mitarbeiter Portal
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const todayStr = formatDate(new Date());
-  const loggedInEmp = EMPLOYEES.find((e) => e.id === auth.employeeId);
-  const empColors: Record<string, { bg: string; text: string }> = {
-    "1": { bg: "#EF4444", text: "#fff" },
-    "2": { bg: "#DC2626", text: "#fff" },
-    "4": { bg: "#E11D48", text: "#fff" },
-    "5": { bg: "#F59E0B", text: "#111" },
-    "6": { bg: "#EAB308", text: "#111" },
-    "7": { bg: "#FACC15", text: "#111" },
-    "3": { bg: "#FF8C00", text: "#fff" },
-    "8": { bg: "#22C55E", text: "#fff" },
-    "9": { bg: "#16A34A", text: "#fff" },
-    "10": { bg: "#15803D", text: "#fff" },
-    "11": { bg: "#EC4899", text: "#fff" },
-    "12": { bg: "#7C3AED", text: "#fff" },
-    "13": { bg: "#A78BFA", text: "#fff" },
-    "14": { bg: "#D97706", text: "#fff" },
-    "15": { bg: "#B45309", text: "#fff" },
-    "16": { bg: "#92400E", text: "#fff" },
-    "17": { bg: "#0EA5E9", text: "#fff" },
-  };
 
-  const avatar = loggedInEmp
-    ? empColors[loggedInEmp.id] || { bg: "#cbd5e1", text: "#0f172a" }
-    : { bg: "#cbd5e1", text: "#0f172a" };
+  /* ---------- Rendering ---------- */
+  if (authLoading) return <div style={{ padding: 40 }}>Lade…</div>;
+  if (!session) return <Login />;
+  if (!profile) return <div style={{ padding: 40 }}>Profil wird geladen…</div>;
 
-  const isBertl = auth.mode === "admin"; // Check, ob der Admin angemeldet ist
+  const weekNav = (
+    <div className="month-nav-optivio">
+      <button className="nav-arrow" onClick={() => handleWeekChange(-1)}>
+        <Icon>
+          <polyline points="15 18 9 12 15 6" />
+        </Icon>
+      </button>
+      <div className="month-display">
+        <span className="month-text">{currentWeekRange}</span>
+      </div>
+      <button className="nav-arrow" onClick={() => handleWeekChange(1)}>
+        <Icon>
+          <polyline points="9 18 15 12 9 6" />
+        </Icon>
+      </button>
+      <button className="today-btn" onClick={handleGoToday}>
+        Heute
+      </button>
+    </div>
+  );
+
+  const editingEmp = editingCell
+    ? employees.find((e) => e.id === editingCell.empId)
+    : undefined;
+  const editColors: ShiftColor[] = editingEmp
+    ? Array.from(new Set<ShiftColor>([...editingEmp.allowedColors, "frei"]))
+    : [];
 
   return (
     <div className="app-layout">
-      {/* 1. GEMEINSAME SIDEBAR FÜR ALLE */}
+      {/* SIDEBAR */}
       <aside className="sidebar">
         <div className="sidebar-logo">
           <div className="logo-icon">
-            <Avatar emp={loggedInEmp} size={30} />
+            <Avatar emp={me} size={30} />
           </div>
           <span className="logo-text">OPTIVIO</span>
         </div>
@@ -761,128 +461,60 @@ function App() {
             className={`nav-item ${activeNav === "overview" ? "active" : ""}`}
             onClick={() => setActiveNav("overview")}
           >
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
+            <Icon>
               <rect x="3" y="3" width="7" height="7" />
               <rect x="14" y="3" width="7" height="7" />
               <rect x="14" y="14" width="7" height="7" />
               <rect x="3" y="14" width="7" height="7" />
-            </svg>
+            </Icon>
             Übersicht
           </button>
 
-          {/* Menüpunkte nur für Mitarbeiter */}
-          {!isBertl && (
+          {!isPlanner && (
             <button
               className={`nav-item ${activeNav === "krankenstand" ? "active" : ""}`}
               onClick={() => setActiveNav("krankenstand")}
             >
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
+              <Icon>
                 <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
                 <line x1="16" y1="2" x2="16" y2="6" />
                 <line x1="8" y1="2" x2="8" y2="6" />
                 <line x1="3" y1="10" x2="21" y2="10" />
-              </svg>
+              </Icon>
               Krankenstand
             </button>
           )}
 
-          {/* Menüpunkte nur für Bertl (Admin) */}
-          {isBertl && (
-            <>
-              <button
-                className={`nav-item ${activeNav === "krankenbescheinigungen" ? "active" : ""}`}
-                onClick={async () => {
-                  setActiveNav("krankenbescheinigungen");
-                  setUnreadCount(0); // Roter Punkt geht sofort weg
-
-                  // Speichere die aktuelle Gesamtzahl als "gelesen" ab
-                  const { data } = await supabase
-                    .from("sick_leaves")
-                    .select("id");
-                  if (data) {
-                    localStorage.setItem(
-                      "pfanderbahn_last_seen_count",
-                      data.length.toString(),
-                    );
-                  }
-                }}
-                style={{ position: "relative" }}
-              >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+          {isPlanner && (
+            <button
+              className={`nav-item ${activeNav === "krankenbescheinigungen" ? "active" : ""}`}
+              onClick={() => setActiveNav("krankenbescheinigungen")}
+              style={{ position: "relative" }}
+            >
+              <Icon>
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+              </Icon>
+              <span>Krankenbescheinigungen</span>
+              {unreadCount > 0 && (
+                <span
+                  style={{
+                    position: "absolute",
+                    right: 12,
+                    background: "#EF4444",
+                    color: "#fff",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    padding: "2px 7px",
+                    borderRadius: 99,
+                  }}
                 >
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                  <line x1="16" y1="13" x2="8" y2="13" />
-                  <line x1="16" y1="17" x2="8" y2="17" />
-                  <polyline points="10 9 9 9 8 9" />
-                </svg>
-                <span>Krankenbescheinigungen</span>
-                {unreadCount > 0 && (
-                  <span
-                    style={{
-                      position: "absolute",
-                      right: 12,
-                      background: "#EF4444",
-                      color: "#fff",
-                      fontSize: 11,
-                      fontWeight: 700,
-                      padding: "2px 7px",
-                      borderRadius: 99,
-                      boxShadow: "0 2px 6px rgba(239, 68, 68, 0.4)",
-                    }}
-                  >
-                    {unreadCount}
-                  </span>
-                )}
-              </button>
-              <button
-                className={`nav-item ${activeNav === "team" ? "active" : ""}`}
-                onClick={() => setActiveNav("team")}
-              >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                  <circle cx="9" cy="7" r="4" />
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                </svg>
-                Team
-              </button>
-            </>
+                  {unreadCount}
+                </span>
+              )}
+            </button>
           )}
         </nav>
 
@@ -892,71 +524,48 @@ function App() {
             className={`nav-item ${activeNav === "settings" ? "active" : ""}`}
             onClick={() => setActiveNav("settings")}
           >
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+            <Icon>
               <circle cx="12" cy="12" r="3" />
-            </svg>
+              <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+            </Icon>
             Einstellungen
           </button>
           <button className="nav-item logout" onClick={handleLogout}>
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
+            <Icon>
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
               <polyline points="16 17 21 12 16 7" />
               <line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
+            </Icon>
             Abmelden
           </button>
         </div>
       </aside>
 
-      {/* 2. HAUPTBEREICH (Ändert sich je nach activeNav) */}
+      {/* HAUPTBEREICH */}
       <main
         className="main-content"
         style={{ maxWidth: 1400, margin: "0 auto", width: "100%" }}
       >
-        {/* ANSICHT: HOME / MITARBEITER */}
-        {activeNav === "overview" && !isBertl && (
+        {/* MITARBEITER-ÜBERSICHT */}
+        {activeNav === "overview" && !isPlanner && (
           <>
             <div className="employee-personal-header">
-              {loggedInEmp?.avatarUrl ? (
-                <div
-                  className="employee-personal-avatar"
-                  style={{ padding: 0, background: avatar.bg }}
-                >
+              <div
+                className="employee-personal-avatar"
+                style={{ padding: 0, background: "#cbd5e1" }}
+              >
+                {me?.avatarUrl ? (
                   <img
-                    src={loggedInEmp.avatarUrl}
-                    alt={loggedInEmp.name}
+                    src={me.avatarUrl}
+                    alt={me.name}
                     className="avatar-img"
                   />
-                </div>
-              ) : (
-                <div
-                  className="employee-personal-avatar"
-                  style={{ background: avatar.bg, color: avatar.text }}
-                >
-                  {loggedInEmp ? getInitials(loggedInEmp.name) : "??"}
-                </div>
-              )}
+                ) : (
+                  getInitials(profile.full_name)
+                )}
+              </div>
               <div className="employee-personal-meta">
-                <h2>{auth.employeeName}</h2>
+                <h2>{profile.full_name}</h2>
                 <p>
                   Dein persönlicher Dienstplan •{" "}
                   <span style={{ color: "var(--opt-blue)", fontWeight: 600 }}>
@@ -999,44 +608,7 @@ function App() {
                   {currentWeekRange} • 7-Tage-Wochenansicht (Mo – So)
                 </div>
               </div>
-              <div className="month-nav-optivio">
-                <button
-                  className="nav-arrow"
-                  onClick={() => handleWeekChange(-1)}
-                >
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <polyline points="15 18 9 12 15 6" />
-                  </svg>
-                </button>
-                <div className="month-display">
-                  <span className="month-text">{currentWeekRange}</span>
-                </div>
-                <button
-                  className="nav-arrow"
-                  onClick={() => handleWeekChange(1)}
-                >
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <polyline points="9 18 15 12 9 6" />
-                  </svg>
-                </button>
-                <button className="today-btn" onClick={handleGoToday}>
-                  Heute
-                </button>
-              </div>
+              {weekNav}
             </div>
 
             <div className="toggle-row">
@@ -1070,27 +642,11 @@ function App() {
                   style={{ gridTemplateColumns: "repeat(7, minmax(0, 1fr))" }}
                 >
                   {dates.map((date) => {
-                    const entry = getCell(auth.employeeId!, date);
-                    const ci = SHIFT_COLORS[entry.color];
-                    const isFrei = entry.color === "frei" && !entry.note;
-                    const isToday = date === todayStr;
-
-                    let style: React.CSSProperties = isFrei
-                      ? {
-                          background: "#F2F5FA",
-                          color: "#6B7385",
-                          borderColor: "#E5E7EB",
-                        }
-                      : {
-                          borderColor: ci.bg,
-                          background: ci.bg + "1A",
-                          color: ci.text === "#FFFFFF" ? ci.bg : ci.text,
-                        };
-
+                    const entry = getCell(profile.id, date);
                     return (
                       <div
                         key={date}
-                        className={`emp-day-card ${isToday ? "today" : ""}`}
+                        className={`emp-day-card ${date === todayStr ? "today" : ""}`}
                       >
                         <div className="emp-day-weekday">
                           {getWeekdayLong(date).toUpperCase().slice(0, 2)}
@@ -1098,12 +654,8 @@ function App() {
                         <div className="emp-day-date">
                           {formatDateDisplay(date).split(".")[0]}.
                         </div>
-                        <div className="emp-day-shift" style={style}>
-                          {entry.note
-                            ? entry.note
-                            : isFrei
-                              ? "— Frei —"
-                              : ci.label}
+                        <div className="emp-day-shift" style={pillStyle(entry)}>
+                          {pillLabel(entry, "— Frei —")}
                         </div>
                       </div>
                     );
@@ -1128,25 +680,22 @@ function App() {
                         Dienstplan
                       </div>
                     </div>
-                    {dates.map((date) => {
-                      const isToday = date === todayStr;
-                      return (
-                        <div
-                          key={date}
-                          className={`pt-cell head-cell ${isToday ? "today" : ""}`}
-                        >
-                          <div className="weekday">
-                            {getWeekdayLong(date).toUpperCase()}
-                          </div>
-                          <div className="day-date">
-                            {formatDateDisplay(date).split(".")[0]}.
-                          </div>
+                    {dates.map((date) => (
+                      <div
+                        key={date}
+                        className={`pt-cell head-cell ${date === todayStr ? "today" : ""}`}
+                      >
+                        <div className="weekday">
+                          {getWeekdayLong(date).toUpperCase()}
                         </div>
-                      );
-                    })}
+                        <div className="day-date">
+                          {formatDateDisplay(date).split(".")[0]}.
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  {EMPLOYEES.map((e) => {
-                    const isMe = e.id === auth.employeeId;
+                  {employees.map((e) => {
+                    const isMe = e.id === profile.id;
                     return (
                       <div key={e.id} className="pt-row">
                         <div
@@ -1186,34 +735,7 @@ function App() {
                         </div>
                         {dates.map((date) => {
                           const entry = getCell(e.id, date);
-                          const ci = SHIFT_COLORS[entry.color];
-                          const isFrei = entry.color === "frei" && !entry.note;
                           const isToday = date === todayStr;
-                          let pillStyle: React.CSSProperties = {
-                            fontSize: 11.5,
-                            padding: "6px 8px",
-                            borderRadius: 9,
-                            width: "100%",
-                            textAlign: "center",
-                            fontWeight: 600,
-                            lineHeight: 1.3,
-                            border: "1px solid transparent",
-                          };
-                          if (!isFrei) {
-                            pillStyle = {
-                              ...pillStyle,
-                              borderColor: ci.bg,
-                              background: ci.bg + "1A",
-                              color: ci.text === "#FFFFFF" ? ci.bg : ci.text,
-                            };
-                          } else {
-                            pillStyle = {
-                              ...pillStyle,
-                              background: "#F2F5FA",
-                              color: "#8E97A9",
-                              borderColor: "#EEF0F4",
-                            };
-                          }
                           const dayEvents = getEventsForDate(date);
                           return (
                             <div
@@ -1230,12 +752,8 @@ function App() {
                                         : undefined,
                               }}
                             >
-                              <div style={pillStyle}>
-                                {entry.note
-                                  ? entry.note
-                                  : isFrei
-                                    ? "Frei"
-                                    : ci.label}
+                              <div style={pillStyle(entry, true)}>
+                                {pillLabel(entry)}
                               </div>
                               {dayEvents.length > 0 && (
                                 <div
@@ -1266,8 +784,8 @@ function App() {
           </>
         )}
 
-        {/* ANSICHT: HOME / ADMIN (Bertl) */}
-        {activeNav === "overview" && isBertl && (
+        {/* PLANER-ÜBERSICHT (Bertl) */}
+        {activeNav === "overview" && isPlanner && (
           <>
             <div className="page-header">
               <div className="page-title-section">
@@ -1279,23 +797,7 @@ function App() {
                 </p>
               </div>
               <div className="page-actions">
-                <div className="month-nav-optivio">
-                  <button
-                    className="nav-arrow"
-                    onClick={() => handleWeekChange(-1)}
-                  >
-                    {"<"}
-                  </button>
-                  <div className="month-display">
-                    <span className="month-text">{currentWeekRange}</span>
-                  </div>
-                  <button
-                    className="nav-arrow"
-                    onClick={() => handleWeekChange(1)}
-                  >
-                    {">"}
-                  </button>
-                </div>
+                {weekNav}
                 <button className="btn btn-action" onClick={openNewEventModal}>
                   Event
                 </button>
@@ -1304,11 +806,8 @@ function App() {
 
             <div className="admin-banner">
               <span>
-                Als{" "}
-                <strong>
-                  {auth.employeeName || loggedInEmp?.name || "Berthold Martan"}
-                </strong>{" "}
-                angemeldet — du kannst den Dienstplan bearbeiten.
+                Als <strong>{profile.full_name}</strong> angemeldet — klicke auf
+                eine Zelle, um den Dienstplan zu bearbeiten.
               </span>
             </div>
 
@@ -1318,15 +817,40 @@ function App() {
                   <thead>
                     <tr>
                       <th className="opt-col-employee">MITARBEITER</th>
-                      {dates.map((date) => (
-                        <th key={date} className="opt-col-date">
-                          {getWeekdayLong(date).toUpperCase()}
-                        </th>
-                      ))}
+                      {dates.map((date) => {
+                        const evs = getEventsForDate(date);
+                        return (
+                          <th key={date} className="opt-col-date">
+                            {getWeekdayLong(date).toUpperCase()}
+                            <div style={{ fontSize: 11, opacity: 0.7 }}>
+                              {formatDateDisplay(date).slice(0, 5)}
+                            </div>
+                            {evs.map((ev) => (
+                              <div
+                                key={ev.id}
+                                onClick={() => openEditEventModal(ev)}
+                                title={ev.description}
+                                style={{
+                                  fontSize: 10,
+                                  marginTop: 4,
+                                  padding: "2px 6px",
+                                  background: "#FEF3C7",
+                                  color: "#92400E",
+                                  borderRadius: 6,
+                                  fontWeight: 600,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                📌 {ev.title.slice(0, 14)}
+                              </div>
+                            ))}
+                          </th>
+                        );
+                      })}
                     </tr>
                   </thead>
                   <tbody>
-                    {EMPLOYEES.map((emp) => (
+                    {employees.map((emp) => (
                       <tr key={emp.id} className="t-row">
                         <td className="opt-col-employee-body">
                           <div className="employee-card2">
@@ -1341,8 +865,8 @@ function App() {
                         </td>
                         {dates.map((date) => {
                           const entry = getCell(emp.id, date);
-                          const ci = SHIFT_COLORS[entry.color];
                           const isFrei = entry.color === "frei" && !entry.note;
+                          const ci = SHIFT_COLORS[entry.color];
                           return (
                             <td
                               key={date}
@@ -1361,13 +885,7 @@ function App() {
                                     : {}
                                 }
                               >
-                                <span>
-                                  {entry.note
-                                    ? entry.note
-                                    : isFrei
-                                      ? "Frei"
-                                      : ci.label}
-                                </span>
+                                <span>{pillLabel(entry)}</span>
                               </div>
                             </td>
                           );
@@ -1381,35 +899,315 @@ function App() {
           </>
         )}
 
-        {/* NEUE ANSICHT: KRANKENSTAND UPLOAD (Mitarbeiter) */}
-        {activeNav === "krankenstand" && !isBertl && (
-          <SickLeaveUpload employeeName={auth.employeeName || "Unbekannt"} />
+        {activeNav === "krankenstand" && !isPlanner && <SickLeaveUpload />}
+        {activeNav === "krankenbescheinigungen" && isPlanner && (
+          <BLOverview onChange={refreshUnread} />
         )}
-        {/* NEUE ANSICHT: KRANKENBESCHEINIGUNGEN ÜBERSICHT (Admin/Bertl) */}
-        {activeNav === "krankenbescheinigungen" && isBertl && <BertlOverview />}
+
+        {activeNav === "settings" && (
+          <div style={{ maxWidth: 520, margin: "0 auto", paddingTop: 20 }}>
+            <div className="page-header" style={{ marginBottom: 24 }}>
+              <div className="page-title-section">
+                <h1 className="page-title">
+                  <span className="brand-blue">Einstellungen</span>
+                </h1>
+                <p className="page-subtitle">
+                  Hier kannst du deine PIN ändern.
+                </p>
+              </div>
+            </div>
+            <form
+              onSubmit={handleChangePw}
+              style={{
+                background: "#fff",
+                borderRadius: 16,
+                padding: 28,
+                border: "1px solid #EEF0F4",
+              }}
+            >
+              <label
+                style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: "#6B7385",
+                  textTransform: "uppercase",
+                }}
+              >
+                Neue PIN / neues Passwort
+              </label>
+              <input
+                type="password"
+                className="opt-input"
+                autoComplete="new-password"
+                value={pwNew}
+                onChange={(e) => {
+                  setPwNew(e.target.value);
+                  setPwMsg(null);
+                }}
+                style={{ marginTop: 6, marginBottom: 16 }}
+              />
+              <button
+                type="submit"
+                className="btn-save"
+                style={{ padding: "10px 24px", borderRadius: 99 }}
+              >
+                PIN ändern
+              </button>
+              {pwMsg && (
+                <p
+                  style={{
+                    marginTop: 12,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: pwMsg.ok ? "#059669" : "#DC2626",
+                  }}
+                >
+                  {pwMsg.text}
+                </p>
+              )}
+            </form>
+          </div>
+        )}
       </main>
 
-      {/* --- BESTEHENDE MODALS FÜR BEARBEITEN / EVENTS --- */}
-      {editingCell && isBertl && (
+      {/* MODAL: DIENST BEARBEITEN */}
+      {editingCell && isPlanner && editingEmp && (
         <div
           className="modal-overlay"
           onClick={() => {
             setEditingCell(null);
             setNoteInput("");
           }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
         >
-          {/* ... Dein bestehender Editing-Modal Code ... */}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#fff",
+              borderRadius: 16,
+              padding: 24,
+              width: "min(440px, 92vw)",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
+            }}
+          >
+            <h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 2 }}>
+              {editingEmp.name}
+            </h3>
+            <p style={{ fontSize: 13, color: "#6B7385", marginBottom: 16 }}>
+              {getWeekdayLong(editingCell.date)},{" "}
+              {formatDateDisplay(editingCell.date)}
+            </p>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 8,
+                marginBottom: 16,
+              }}
+            >
+              {editColors.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => saveCell(c, noteInput)}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 10,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    background: SHIFT_COLORS[c].bg,
+                    color: SHIFT_COLORS[c].text,
+                    border: "1px solid rgba(0,0,0,0.12)",
+                  }}
+                >
+                  {SHIFT_COLORS[c].label}
+                </button>
+              ))}
+            </div>
+            <label
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                color: "#6B7385",
+                textTransform: "uppercase",
+              }}
+            >
+              Notiz (optional, ersetzt die Anzeige)
+            </label>
+            <input
+              className="opt-input"
+              value={noteInput}
+              onChange={(e) => setNoteInput(e.target.value)}
+              placeholder="z. B. 08:00 – 14:00"
+              style={{ marginTop: 6, width: "100%" }}
+            />
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 10,
+                marginTop: 18,
+              }}
+            >
+              <button
+                className="btn"
+                onClick={() => {
+                  setEditingCell(null);
+                  setNoteInput("");
+                }}
+              >
+                Abbrechen
+              </button>
+              <button
+                className="btn-save"
+                style={{ padding: "8px 20px", borderRadius: 99 }}
+                onClick={() =>
+                  saveCell(
+                    getCell(editingCell.empId, editingCell.date).color,
+                    noteInput,
+                  )
+                }
+              >
+                Notiz speichern
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
-      {showEventModal && isBertl && (
+      {/* MODAL: EVENT */}
+      {showEventModal && isPlanner && (
         <div
           className="modal-overlay"
-          onClick={() => {
-            setShowEventModal(false);
+          onClick={() => setShowEventModal(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
           }}
         >
-          {/* ... Dein bestehender Event-Modal Code ... */}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#fff",
+              borderRadius: 16,
+              padding: 24,
+              width: "min(440px, 92vw)",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
+            }}
+          >
+            <h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 16 }}>
+              {eventDraft.id ? "Event bearbeiten" : "Neues Event"}
+            </h3>
+            <label
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                color: "#6B7385",
+                textTransform: "uppercase",
+              }}
+            >
+              Datum
+            </label>
+            <input
+              type="date"
+              className="opt-input"
+              value={eventDraft.date}
+              onChange={(e) =>
+                setEventDraft({ ...eventDraft, date: e.target.value })
+              }
+              style={{ margin: "6px 0 12px", width: "100%" }}
+            />
+            <label
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                color: "#6B7385",
+                textTransform: "uppercase",
+              }}
+            >
+              Titel
+            </label>
+            <input
+              className="opt-input"
+              value={eventDraft.title}
+              onChange={(e) =>
+                setEventDraft({ ...eventDraft, title: e.target.value })
+              }
+              style={{ margin: "6px 0 12px", width: "100%" }}
+            />
+            <label
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                color: "#6B7385",
+                textTransform: "uppercase",
+              }}
+            >
+              Beschreibung
+            </label>
+            <textarea
+              className="opt-input"
+              value={eventDraft.description}
+              onChange={(e) =>
+                setEventDraft({ ...eventDraft, description: e.target.value })
+              }
+              style={{ margin: "6px 0 12px", width: "100%", minHeight: 70 }}
+            />
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                marginTop: 8,
+              }}
+            >
+              {eventDraft.id ? (
+                <button
+                  onClick={() => handleDeleteEvent(eventDraft.id!)}
+                  style={{
+                    background: "#FEF2F2",
+                    color: "#DC2626",
+                    border: "1px solid #FECACA",
+                    padding: "8px 16px",
+                    borderRadius: 8,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Löschen
+                </button>
+              ) : (
+                <span />
+              )}
+              <div style={{ display: "flex", gap: 10 }}>
+                <button
+                  className="btn"
+                  onClick={() => setShowEventModal(false)}
+                >
+                  Abbrechen
+                </button>
+                <button
+                  className="btn-save"
+                  style={{ padding: "8px 20px", borderRadius: 99 }}
+                  onClick={handleSaveEvent}
+                >
+                  Speichern
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

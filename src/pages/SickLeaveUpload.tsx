@@ -1,87 +1,83 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "../supabaseClient";
 
-type Props = {
-  employeeName: string;
+const MAX_SIZE = 5 * 1024 * 1024;
+const ALLOWED = ["image/jpeg", "image/png", "application/pdf"];
+
+const labelStyle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 700,
+  color: "#6B7385",
+  textTransform: "uppercase",
 };
 
-export default function SickLeaveUpload({ employeeName }: Props) {
+export default function SickLeaveUpload() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-
-  // State für die Toast-Nachricht
-  const [toast, setToast] = useState<{ show: boolean; message: string }>({
-    show: false,
-    message: "",
-  });
-
+  const [toast, setToast] = useState<{
+    show: boolean;
+    message: string;
+    ok: boolean;
+  }>({ show: false, message: "", ok: true });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Toast automatisch nach 4 Sekunden ausblenden
   useEffect(() => {
-    if (toast.show) {
-      const timer = setTimeout(() => {
-        setToast((prev) => ({ ...prev, show: false }));
-      }, 4000);
-      return () => clearTimeout(timer);
-    }
+    if (!toast.show) return;
+    const t = setTimeout(() => setToast((p) => ({ ...p, show: false })), 4000);
+    return () => clearTimeout(t);
   }, [toast.show]);
+
+  const notify = (message: string, ok: boolean) =>
+    setToast({ show: true, message, ok });
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file || !startDate || !endDate) {
-      alert("Bitte alle Felder ausfüllen!");
-      return;
-    }
-    if (!employeeName) {
-      alert("Mitarbeitername fehlt!");
-      return;
-    }
+    if (!file || !startDate || !endDate)
+      return notify("Bitte alle Felder ausfüllen.", false);
+    if (endDate < startDate)
+      return notify("„Voraussichtlich bis“ liegt vor dem ersten Tag.", false);
+    if (!ALLOWED.includes(file.type))
+      return notify("Nur JPG, PNG oder PDF erlaubt.", false);
+    if (file.size > MAX_SIZE)
+      return notify("Die Datei ist größer als 5 MB.", false);
 
     setIsUploading(true);
-
+    let filePath: string | null = null;
     try {
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${employeeName.replace(/\s+/g, "_")}_${Date.now()}.${fileExt}`;
-      const filePath = `${fileName}`;
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("Nicht eingeloggt.");
 
-      const { error: uploadError } = await supabase.storage
-        .from("sick-leaves")
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      filePath = `${user.id}/${Date.now()}-${safeName}`;
+
+      const { error: upErr } = await supabase.storage
+        .from("sick-notes")
         .upload(filePath, file);
+      if (upErr) throw upErr;
 
-      if (uploadError) throw uploadError;
-
-      const { data: publicUrlData } = supabase.storage
-        .from("sick-leaves")
-        .getPublicUrl(filePath);
-
-      const { error: dbError } = await supabase.from("sick_leaves").insert([
-        {
-          employee_name: employeeName,
-          start_date: startDate,
-          end_date: endDate,
-          image_url: publicUrlData.publicUrl,
-        },
-      ]);
-
-      if (dbError) throw dbError;
-
-      // Erfolgreich! Zeige unsere schicke Toast-Nachricht
-      setToast({
-        show: true,
-        message: "Krankenzettel erfolgreich an Bertl übermittelt",
+      const { error: dbErr } = await supabase.from("absences").insert({
+        employee_id: user.id,
+        type: "sick",
+        date_from: startDate,
+        date_to: endDate,
+        file_path: filePath,
       });
+      if (dbErr) {
+        await supabase.storage.from("sick-notes").remove([filePath]);
+        throw dbErr;
+      }
 
-      // Formular zurücksetzen
+      notify("Krankenzettel erfolgreich an Bertl übermittelt", true);
       setStartDate("");
       setEndDate("");
       setFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
-    } catch (error: any) {
-      console.error("Upload Fehler:", error);
-      alert("Fehler beim Hochladen: " + error.message);
+    } catch (err: any) {
+      notify("Fehler beim Hochladen: " + (err.message ?? "unbekannt"), false);
     } finally {
       setIsUploading(false);
     }
@@ -115,7 +111,7 @@ export default function SickLeaveUpload({ employeeName }: Props) {
         style={{
           background: "#fff",
           borderRadius: 16,
-          padding: "30px",
+          padding: 30,
           border: "1px solid #EEF0F4",
           boxShadow: "0 4px 20px rgba(0,0,0,0.03)",
         }}
@@ -129,16 +125,7 @@ export default function SickLeaveUpload({ employeeName }: Props) {
           }}
         >
           <div className="form-group" style={{ flex: "1 1 200px" }}>
-            <label
-              style={{
-                fontSize: 12,
-                fontWeight: 700,
-                color: "#6B7385",
-                textTransform: "uppercase",
-              }}
-            >
-              Erster Krankheitstag
-            </label>
+            <label style={labelStyle}>Erster Krankheitstag</label>
             <input
               type="date"
               className="opt-input"
@@ -149,20 +136,12 @@ export default function SickLeaveUpload({ employeeName }: Props) {
             />
           </div>
           <div className="form-group" style={{ flex: "1 1 200px" }}>
-            <label
-              style={{
-                fontSize: 12,
-                fontWeight: 700,
-                color: "#6B7385",
-                textTransform: "uppercase",
-              }}
-            >
-              Voraussichtlich bis
-            </label>
+            <label style={labelStyle}>Voraussichtlich bis</label>
             <input
               type="date"
               className="opt-input"
               value={endDate}
+              min={startDate}
               onChange={(e) => setEndDate(e.target.value)}
               style={{ marginTop: 6 }}
               required
@@ -171,16 +150,7 @@ export default function SickLeaveUpload({ employeeName }: Props) {
         </div>
 
         <div className="form-group" style={{ marginBottom: 35 }}>
-          <label
-            style={{
-              fontSize: 12,
-              fontWeight: 700,
-              color: "#6B7385",
-              textTransform: "uppercase",
-            }}
-          >
-            Krankenzettel (Foto/Scan)
-          </label>
+          <label style={labelStyle}>Krankenzettel (Foto/Scan)</label>
           <div
             style={{
               display: "flex",
@@ -193,8 +163,7 @@ export default function SickLeaveUpload({ employeeName }: Props) {
               type="file"
               ref={fileInputRef}
               style={{ display: "none" }}
-              accept="image/*,.pdf"
-              capture="environment"
+              accept="image/jpeg,image/png,application/pdf"
               onChange={(e) => setFile(e.target.files?.[0] || null)}
             />
             <button
@@ -220,7 +189,7 @@ export default function SickLeaveUpload({ employeeName }: Props) {
                   {file.name}
                 </span>
               ) : (
-                "Keine Datei (JPG, PNG, PDF)"
+                "Keine Datei (JPG, PNG, PDF, max. 5 MB)"
               )}
             </span>
           </div>
@@ -252,21 +221,17 @@ export default function SickLeaveUpload({ employeeName }: Props) {
         </div>
       </form>
 
-      {/* --- SCHICKE GRÜNE TOAST-BENACHRICHTIGUNG RECHTS UNTEN --- */}
       {toast.show && (
         <div
           style={{
             position: "fixed",
             bottom: 30,
             right: 30,
-            background: "#10B981",
+            background: toast.ok ? "#10B981" : "#DC2626",
             color: "#fff",
             padding: "16px 22px",
             borderRadius: 14,
-            boxShadow: "0 10px 30px rgba(16, 185, 129, 0.3)",
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
+            boxShadow: "0 10px 30px rgba(0,0,0,0.2)",
             zIndex: 9999,
             minWidth: 320,
             animation: "slideInRight 0.3s ease-out",
@@ -274,41 +239,25 @@ export default function SickLeaveUpload({ employeeName }: Props) {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ fontSize: 18 }}>✅</span>
-            <span
-              style={{
-                fontSize: 14,
-                fontWeight: 700,
-                letterSpacing: "-0.01em",
-              }}
-            >
+            <span style={{ fontSize: 18 }}>{toast.ok ? "✅" : "⚠️"}</span>
+            <span style={{ fontSize: 14, fontWeight: 700 }}>
               {toast.message}
             </span>
           </div>
-
-          {/* Der weiße Ladebalken ganz unten, der sich nach links entleert */}
           <div
             style={{
               position: "absolute",
               bottom: 0,
               left: 0,
               height: 3,
-              background: "rgba(255, 255, 255, 0.8)",
+              background: "rgba(255,255,255,0.8)",
               width: "100%",
               animation: "shrinkBar 4s linear forwards",
             }}
           />
-
-          {/* CSS Animationen */}
           <style>{`
-            @keyframes slideInRight {
-              from { transform: translateX(100px); opacity: 0; }
-              to { transform: translateX(0); opacity: 1; }
-            }
-            @keyframes shrinkBar {
-              from { width: 100%; }
-              to { width: 0%; }
-            }
+            @keyframes slideInRight { from { transform: translateX(100px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+            @keyframes shrinkBar { from { width: 100%; } to { width: 0%; } }
           `}</style>
         </div>
       )}

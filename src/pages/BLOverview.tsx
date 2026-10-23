@@ -1,74 +1,81 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../supabaseClient";
 
-type SickLeaveRecord = {
+type Record_ = {
   id: string;
-  employee_name: string;
-  start_date: string;
-  end_date: string;
-  image_url: string;
+  date_from: string;
+  date_to: string;
+  file_path: string | null;
+  status: "submitted" | "confirmed" | "rejected";
   created_at: string;
+  profiles: { full_name: string } | null;
+  url?: string;
 };
 
-type Props = {
-  onClearBadge?: () => void;
-};
+type Props = { onChange?: () => void };
 
-export default function BLOverview({ onClearBadge }: Props) {
-  const [records, setRecords] = useState<SickLeaveRecord[]>([]);
+const fmt = (iso: string) => iso.split("-").reverse().join(".");
+const isPdf = (p: string | null) => !!p && p.toLowerCase().endsWith(".pdf");
+
+export default function BLOverview({ onChange }: Props) {
+  const [records, setRecords] = useState<Record_[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    fetchSickLeaves();
-    if (onClearBadge) {
-      onClearBadge(); // Setzt den Zähler sicher auf 0, falls vorhanden
-    }
-  }, []);
-
-  const fetchSickLeaves = async () => {
+  const load = async () => {
     setIsLoading(true);
     const { data, error } = await supabase
-      .from("sick_leaves")
-      .select("*")
+      .from("absences")
+      .select(
+        "id, date_from, date_to, file_path, status, created_at, profiles:employee_id(full_name)",
+      )
+      .eq("type", "sick")
       .order("created_at", { ascending: false });
 
     if (error) {
       console.error("Fehler beim Laden:", error);
-    } else {
-      setRecords(data || []);
+      setIsLoading(false);
+      return;
     }
+    const rows = (data ?? []) as unknown as Record_[];
+
+    const paths = rows.map((r) => r.file_path).filter(Boolean) as string[];
+    if (paths.length) {
+      const { data: signed } = await supabase.storage
+        .from("sick-notes")
+        .createSignedUrls(paths, 3600);
+      signed?.forEach((s) => {
+        const row = rows.find((r) => r.file_path === s.path);
+        if (row && s.signedUrl) row.url = s.signedUrl;
+      });
+    }
+    setRecords(rows);
     setIsLoading(false);
   };
 
-  const currentSeen = localStorage.getItem("pfanderbahn_last_seen_count");
-  if (currentSeen) {
-    const newCount = Math.max(0, parseInt(currentSeen, 10) - 1);
-    localStorage.setItem("pfanderbahn_last_seen_count", newCount.toString());
-  }
+  useEffect(() => {
+    load();
+  }, []);
 
-  const handleDelete = async (id: string, imageUrl: string) => {
-    if (!confirm("Möchtest du diesen Krankenzettel wirklich löschen?")) return;
+  const confirm_ = async (id: string) => {
+    const { error } = await supabase
+      .from("absences")
+      .update({ status: "confirmed" })
+      .eq("id", id);
+    if (error) return alert("Fehler: " + error.message);
+    setRecords((p) =>
+      p.map((r) => (r.id === id ? { ...r, status: "confirmed" } : r)),
+    );
+    onChange?.();
+  };
 
-    try {
-      const { error: dbError } = await supabase
-        .from("sick_leaves")
-        .delete()
-        .eq("id", id);
-
-      if (dbError) throw dbError;
-
-      const urlParts = imageUrl.split("/sick-leaves/");
-      if (urlParts.length > 1) {
-        const filePath = urlParts[1];
-        await supabase.storage.from("sick-leaves").remove([filePath]);
-      }
-
-      setRecords((prev) => prev.filter((r) => r.id !== id));
-      alert("Krankenzettel erfolgreich gelöscht!");
-    } catch (err: any) {
-      console.error("Fehler beim Löschen:", err);
-      alert("Fehler beim Löschen: " + err.message);
-    }
+  const handleDelete = async (r: Record_) => {
+    if (!window.confirm("Möchtest du diese Meldung wirklich löschen?")) return;
+    const { error } = await supabase.from("absences").delete().eq("id", r.id);
+    if (error) return alert("Fehler beim Löschen: " + error.message);
+    if (r.file_path)
+      await supabase.storage.from("sick-notes").remove([r.file_path]);
+    setRecords((p) => p.filter((x) => x.id !== r.id));
+    onChange?.();
   };
 
   return (
@@ -95,7 +102,7 @@ export default function BLOverview({ onClearBadge }: Props) {
 
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
         {isLoading ? (
-          <div style={{ textAlign: "center", padding: "40px" }}>
+          <div style={{ textAlign: "center", padding: 40 }}>
             Lade Bescheinigungen...
           </div>
         ) : records.length === 0 ? (
@@ -109,13 +116,13 @@ export default function BLOverview({ onClearBadge }: Props) {
             }}
           >
             <span style={{ fontSize: 15, color: "#6B7385", fontWeight: 600 }}>
-              Aktuell liegen keine neuen Krankenbescheinigungen vor.
+              Aktuell liegen keine Krankenbescheinigungen vor.
             </span>
           </div>
         ) : (
-          records.map((record) => (
+          records.map((r) => (
             <div
-              key={record.id}
+              key={r.id}
               style={{
                 background: "#fff",
                 borderRadius: 16,
@@ -137,16 +144,28 @@ export default function BLOverview({ onClearBadge }: Props) {
                   background: "#F8FAFF",
                   border: "1px solid #E6EEFF",
                   flexShrink: 0,
-                  cursor: "pointer",
+                  cursor: r.url ? "pointer" : "default",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontWeight: 800,
+                  color: "#165DFF",
                 }}
-                onClick={() => window.open(record.image_url, "_blank")}
-                title="Bild vergrößern"
+                onClick={() => r.url && window.open(r.url, "_blank")}
               >
-                <img
-                  src={record.image_url}
-                  alt={`Krankenzettel von ${record.employee_name}`}
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                />
+                {r.url && !isPdf(r.file_path) ? (
+                  <img
+                    src={r.url}
+                    alt={`Krankenzettel von ${r.profiles?.full_name}`}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                    }}
+                  />
+                ) : (
+                  "PDF"
+                )}
               </div>
 
               <div style={{ flex: "1 1 250px" }}>
@@ -158,12 +177,11 @@ export default function BLOverview({ onClearBadge }: Props) {
                     marginBottom: 10,
                   }}
                 >
-                  {record.employee_name}
+                  {r.profiles?.full_name ?? "Unbekannt"}
                 </h3>
                 <div
                   style={{
                     display: "inline-flex",
-                    alignItems: "center",
                     gap: 8,
                     background: "#F8FAFF",
                     border: "1px solid #E6EEFF",
@@ -174,26 +192,63 @@ export default function BLOverview({ onClearBadge }: Props) {
                     fontWeight: 600,
                   }}
                 >
-                  <span style={{ color: "#165DFF" }}>Zeitraum:</span>{" "}
-                  {record.start_date} bis {record.end_date}
+                  <span style={{ color: "#165DFF" }}>Zeitraum:</span>
+                  {fmt(r.date_from)} bis {fmt(r.date_to)}
+                </div>
+                <div
+                  style={{
+                    marginTop: 8,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: r.status === "confirmed" ? "#059669" : "#D97706",
+                  }}
+                >
+                  {r.status === "confirmed"
+                    ? "✓ Bestätigt"
+                    : "● Neu eingereicht"}
                 </div>
               </div>
 
-              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+              >
+                {r.url && (
+                  <button
+                    className="btn-action"
+                    style={{
+                      padding: "10px 20px",
+                      borderRadius: 8,
+                      fontSize: 13,
+                    }}
+                    onClick={() => window.open(r.url, "_blank")}
+                  >
+                    Ansehen
+                  </button>
+                )}
+                {r.status !== "confirmed" && (
+                  <button
+                    onClick={() => confirm_(r.id)}
+                    style={{
+                      background: "#ECFDF5",
+                      color: "#059669",
+                      border: "1px solid #A7F3D0",
+                      padding: "10px 16px",
+                      borderRadius: 8,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Bestätigen
+                  </button>
+                )}
                 <button
-                  className="btn-action"
-                  style={{
-                    padding: "10px 20px",
-                    borderRadius: 8,
-                    fontSize: 13,
-                  }}
-                  onClick={() => window.open(record.image_url, "_blank")}
-                >
-                  Vollbild ansehen
-                </button>
-
-                <button
-                  onClick={() => handleDelete(record.id, record.image_url)}
+                  onClick={() => handleDelete(r)}
                   style={{
                     background: "#FEF2F2",
                     color: "#DC2626",
