@@ -1,0 +1,95 @@
+/* Badge in der Sidebar */
+.nav-badge {
+  position: absolute;
+  right: 12px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 99px;
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.4);
+}
+.nav-short { display: none; }
+
+/* Tagesliste */
+.m-chips { display: flex; gap: 6px; overflow-x: auto; padding: 4px 2px 12px; }
+.m-chip {
+  flex: 1 0 46px; border: 1px solid #e5e7eb; background: #fff; border-radius: 12px;
+  padding: 8px 4px; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  font-size: 11px; font-weight: 700; color: #6b7385; cursor: pointer;
+}
+.m-chip b { font-size: 16px; color: #0f172a; }
+.m-chip.today { border-color: #165dff; }
+.m-chip.active { background: #165dff; border-color: #165dff; color: #fff; }
+.m-chip.active b { color: #fff; }
+
+.m-day-title { font-size: 16px; font-weight: 800; margin: 2px 2px 10px; color: #0f172a; }
+.m-hint { font-size: 12px; color: #6b7385; margin: -4px 2px 10px; }
+.m-event {
+  background: #fef3c7; color: #92400e; border-radius: 10px; padding: 8px 12px;
+  font-size: 13px; font-weight: 600; margin-bottom: 8px;
+}
+
+.m-emp-row {
+  display: flex; align-items: center; gap: 12px; background: #fff;
+  border: 1px solid #eef0f4; border-radius: 14px; padding: 10px 12px; margin-bottom: 8px;
+}
+.m-emp-row.me { background: #eef4ff; border-color: #c7d8ff; }
+.m-emp-row.clickable { cursor: pointer; }
+.m-avatar {
+  width: 38px; height: 38px; border-radius: 50%; overflow: hidden; background: #cbd5e1;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 13px; flex-shrink: 0; color: #0f172a;
+}
+.m-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.m-emp-name { flex: 1; font-size: 14px; font-weight: 600; min-width: 0; }
+.m-pill {
+  border: 1px solid transparent; border-radius: 10px; padding: 7px 12px;
+  font-size: 12.5px; font-weight: 700; text-align: center; min-width: 92px;
+}
+
+/* Eigene Woche als Liste */
+.m-day-row {
+  display: flex; align-items: center; gap: 14px; background: #fff;
+  border: 1px solid #eef0f4; border-radius: 14px; padding: 12px 14px; margin-bottom: 8px;
+}
+.m-day-row.today { border-color: #165dff; background: #f5f8ff; }
+.m-day-label { width: 44px; text-align: center; display: flex; flex-direction: column; }
+.m-day-label span { font-size: 11px; font-weight: 700; color: #6b7385; }
+.m-day-label b { font-size: 20px; color: #0f172a; }
+.m-day-row .m-pill { flex: 1; }
+
+/* Smartphone: Sidebar wird zur unteren Leiste */
+@media (max-width: 768px) {
+  .app-layout { display: block !important; }
+  .sidebar {
+    position: fixed !important; left: 0; right: 0; bottom: 0; top: auto !important;
+    width: 100% !important; height: auto !important; min-height: 0 !important;
+    flex-direction: row !important; align-items: stretch;
+    padding: 6px 6px calc(6px + env(safe-area-inset-bottom)) !important;
+    z-index: 500; border-right: none !important; border-top: 1px solid #e5e7eb;
+    background: #fff; box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.06);
+  }
+  .sidebar-logo, .sidebar-divider { display: none !important; }
+  .sidebar-nav, .sidebar-bottom {
+    display: flex !important; flex-direction: row !important; gap: 2px !important;
+    margin: 0 !important; padding: 0 !important; flex: 1;
+  }
+  .sidebar .nav-item {
+    flex: 1; flex-direction: column; justify-content: center; align-items: center;
+    gap: 3px; padding: 6px 2px !important; font-size: 10px !important;
+    min-width: 0; text-align: center; position: relative; border-radius: 10px;
+  }
+  .nav-full { display: none; }
+  .nav-short { display: inline; }
+  .nav-badge { right: 50%; transform: translateX(20px); top: 0; padding: 1px 6px; }
+
+  .main-content {
+    margin-left: 0 !important; padding: 14px 12px 96px !important;
+    width: 100% !important; max-width: 100% !important;
+  }
+  .page-header { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .page-actions { flex-wrap: wrap; width: 100%; }
+  .month-nav-optivio { width: 100%; justify-content: space-between; }
+}

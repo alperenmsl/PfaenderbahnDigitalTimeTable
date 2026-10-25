@@ -57,10 +57,10 @@ export default function BLOverview({ onChange }: Props) {
   }, []);
 
   const confirm_ = async (id: string) => {
-    const { error } = await supabase
-      .from("absences")
-      .update({ status: "confirmed" })
-      .eq("id", id);
+    const { error } = await supabase.rpc("set_absence_status", {
+      p_id: id,
+      p_status: "confirmed",
+    });
     if (error) return alert("Fehler: " + error.message);
     setRecords((p) =>
       p.map((r) => (r.id === id ? { ...r, status: "confirmed" } : r)),
@@ -204,7 +204,7 @@ export default function BLOverview({ onChange }: Props) {
                   }}
                 >
                   {r.status === "confirmed"
-                    ? "✓ Bestätigt"
+                    ? "✓ Bestätigt – im Dienstplan als Krank eingetragen"
                     : "● Neu eingereicht"}
                 </div>
               </div>

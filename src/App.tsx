@@ -4,6 +4,10 @@ import { supabase } from "./supabaseClient";
 import Login from "./pages/Login";
 import SickLeaveUpload from "./pages/SickLeaveUpload";
 import BLOverview from "./pages/BLOverview";
+import VacationRequest from "./pages/VacationRequest";
+import VacationAdmin from "./pages/VacationAdmin";
+import DayList from "./components/DayList";
+import "./mobile.css";
 import {
   EMPLOYEES,
   SHIFT_COLORS,
@@ -167,6 +171,7 @@ function App() {
   const [schedule, setSchedule] = useState<ScheduleData>({});
   const [events, setEvents] = useState<DayEvent[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadVac, setUnreadVac] = useState(0);
 
   const [activeNav, setActiveNav] = useState("overview");
   const [showAllPlan, setShowAllPlan] = useState(false);
@@ -189,6 +194,16 @@ function App() {
   const [pwMsg, setPwMsg] = useState<{ ok: boolean; text: string } | null>(
     null,
   );
+
+  const [isMobile, setIsMobile] = useState(
+    () => window.matchMedia("(max-width: 768px)").matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 768px)");
+    const handler = () => setIsMobile(mq.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
 
   const isPlanner = profile?.role === "planner";
 
@@ -274,19 +289,23 @@ function App() {
     );
   }, [dates]);
 
+  // Auch beim Zurückwechseln zur Übersicht neu laden (z. B. nach Bestätigung einer Krankmeldung)
   useEffect(() => {
-    if (session) loadWeek();
-  }, [session, loadWeek]);
+    if (session && activeNav === "overview") loadWeek();
+  }, [session, loadWeek, activeNav]);
 
   /* --- Ungelesene Krankmeldungen (nur Planer) --- */
   const refreshUnread = useCallback(async () => {
     if (!isPlanner) return;
-    const { count } = await supabase
-      .from("absences")
-      .select("id", { count: "exact", head: true })
-      .eq("type", "sick")
-      .eq("status", "submitted");
-    setUnreadCount(count ?? 0);
+    const count = (type: string) =>
+      supabase
+        .from("absences")
+        .select("id", { count: "exact", head: true })
+        .eq("type", type)
+        .eq("status", "submitted");
+    const [sick, vac] = await Promise.all([count("sick"), count("vacation")]);
+    setUnreadCount(sick.count ?? 0);
+    setUnreadVac(vac.count ?? 0);
   }, [isPlanner]);
 
   useEffect(() => {
@@ -485,6 +504,26 @@ function App() {
             </button>
           )}
 
+          {!isPlanner && (
+            <button
+              className={`nav-item ${activeNav === "urlaub" ? "active" : ""}`}
+              onClick={() => setActiveNav("urlaub")}
+            >
+              <Icon>
+                <circle cx="12" cy="12" r="4" />
+                <line x1="12" y1="2" x2="12" y2="4" />
+                <line x1="12" y1="20" x2="12" y2="22" />
+                <line x1="2" y1="12" x2="4" y2="12" />
+                <line x1="20" y1="12" x2="22" y2="12" />
+                <line x1="4.9" y1="4.9" x2="6.3" y2="6.3" />
+                <line x1="17.7" y1="17.7" x2="19.1" y2="19.1" />
+                <line x1="4.9" y1="19.1" x2="6.3" y2="17.7" />
+                <line x1="17.7" y1="6.3" x2="19.1" y2="4.9" />
+              </Icon>
+              Urlaub
+            </button>
+          )}
+
           {isPlanner && (
             <button
               className={`nav-item ${activeNav === "krankenbescheinigungen" ? "active" : ""}`}
@@ -497,23 +536,30 @@ function App() {
                 <line x1="16" y1="13" x2="8" y2="13" />
                 <line x1="16" y1="17" x2="8" y2="17" />
               </Icon>
-              <span>Krankenbescheinigungen</span>
+              <span className="nav-full">Krankenbescheinigungen</span>
+              <span className="nav-short">Krank</span>
               {unreadCount > 0 && (
-                <span
-                  style={{
-                    position: "absolute",
-                    right: 12,
-                    background: "#EF4444",
-                    color: "#fff",
-                    fontSize: 11,
-                    fontWeight: 700,
-                    padding: "2px 7px",
-                    borderRadius: 99,
-                  }}
-                >
-                  {unreadCount}
-                </span>
+                <span className="nav-badge">{unreadCount}</span>
               )}
+            </button>
+          )}
+
+          {isPlanner && (
+            <button
+              className={`nav-item ${activeNav === "urlaubsantraege" ? "active" : ""}`}
+              onClick={() => setActiveNav("urlaubsantraege")}
+              style={{ position: "relative" }}
+            >
+              <Icon>
+                <circle cx="12" cy="12" r="4" />
+                <line x1="12" y1="2" x2="12" y2="4" />
+                <line x1="12" y1="20" x2="12" y2="22" />
+                <line x1="2" y1="12" x2="4" y2="12" />
+                <line x1="20" y1="12" x2="22" y2="12" />
+              </Icon>
+              <span className="nav-full">Urlaubsanträge</span>
+              <span className="nav-short">Urlaub</span>
+              {unreadVac > 0 && <span className="nav-badge">{unreadVac}</span>}
             </button>
           )}
         </nav>
@@ -636,7 +682,43 @@ function App() {
                   : "Deine Dienstzeiten dieser Woche"}
               </div>
 
-              {!showAllPlan ? (
+              {isMobile ? (
+                showAllPlan ? (
+                  <DayList
+                    dates={dates}
+                    employees={employees}
+                    getCell={getCell}
+                    getEvents={getEventsForDate}
+                    weekdayLong={getWeekdayLong}
+                    styleFor={(e) => pillStyle(e)}
+                    labelFor={(e) => pillLabel(e)}
+                    todayStr={todayStr}
+                    meId={profile.id}
+                  />
+                ) : (
+                  <div>
+                    {dates.map((date) => {
+                      const entry = getCell(profile.id, date);
+                      return (
+                        <div
+                          key={date}
+                          className={`m-day-row ${date === todayStr ? "today" : ""}`}
+                        >
+                          <div className="m-day-label">
+                            <span>
+                              {getWeekdayLong(date).toUpperCase().slice(0, 2)}
+                            </span>
+                            <b>{date.slice(0, 2)}</b>
+                          </div>
+                          <div className="m-pill" style={pillStyle(entry)}>
+                            {pillLabel(entry, "— Frei —")}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )
+              ) : !showAllPlan ? (
                 <div
                   className="employee-schedule-grid"
                   style={{ gridTemplateColumns: "repeat(7, minmax(0, 1fr))" }}
@@ -811,97 +893,117 @@ function App() {
               </span>
             </div>
 
-            <div className="timetable-card">
-              <div className="timetable-wrapper-opt">
-                <table className="timetable-opt">
-                  <thead>
-                    <tr>
-                      <th className="opt-col-employee">MITARBEITER</th>
-                      {dates.map((date) => {
-                        const evs = getEventsForDate(date);
-                        return (
-                          <th key={date} className="opt-col-date">
-                            {getWeekdayLong(date).toUpperCase()}
-                            <div style={{ fontSize: 11, opacity: 0.7 }}>
-                              {formatDateDisplay(date).slice(0, 5)}
-                            </div>
-                            {evs.map((ev) => (
-                              <div
-                                key={ev.id}
-                                onClick={() => openEditEventModal(ev)}
-                                title={ev.description}
-                                style={{
-                                  fontSize: 10,
-                                  marginTop: 4,
-                                  padding: "2px 6px",
-                                  background: "#FEF3C7",
-                                  color: "#92400E",
-                                  borderRadius: 6,
-                                  fontWeight: 600,
-                                  cursor: "pointer",
-                                }}
-                              >
-                                📌 {ev.title.slice(0, 14)}
-                              </div>
-                            ))}
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {employees.map((emp) => (
-                      <tr key={emp.id} className="t-row">
-                        <td className="opt-col-employee-body">
-                          <div className="employee-card2">
-                            <Avatar emp={emp} size={42} />
-                            <div className="emp-name2">
-                              {emp.isAdmin && (
-                                <span className="admin-star-mini">★</span>
-                              )}{" "}
-                              {emp.name}
-                            </div>
-                          </div>
-                        </td>
+            {isMobile ? (
+              <DayList
+                dates={dates}
+                employees={employees}
+                getCell={getCell}
+                getEvents={getEventsForDate}
+                weekdayLong={getWeekdayLong}
+                styleFor={(e) => pillStyle(e)}
+                labelFor={(e) => pillLabel(e)}
+                todayStr={todayStr}
+                meId={profile.id}
+                onCellClick={handleCellClick}
+              />
+            ) : (
+              <div className="timetable-card">
+                <div className="timetable-wrapper-opt">
+                  <table className="timetable-opt">
+                    <thead>
+                      <tr>
+                        <th className="opt-col-employee">MITARBEITER</th>
                         {dates.map((date) => {
-                          const entry = getCell(emp.id, date);
-                          const isFrei = entry.color === "frei" && !entry.note;
-                          const ci = SHIFT_COLORS[entry.color];
+                          const evs = getEventsForDate(date);
                           return (
-                            <td
-                              key={date}
-                              className="opt-col-body editable-opt"
-                              onClick={() => handleCellClick(emp, date)}
-                            >
-                              <div
-                                className={`shift-pill ${isFrei ? "frei" : ""}`}
-                                style={
-                                  !isFrei
-                                    ? {
-                                        borderColor: ci.bg,
-                                        background: ci.bg + "14",
-                                        color: ci.bg,
-                                      }
-                                    : {}
-                                }
-                              >
-                                <span>{pillLabel(entry)}</span>
+                            <th key={date} className="opt-col-date">
+                              {getWeekdayLong(date).toUpperCase()}
+                              <div style={{ fontSize: 11, opacity: 0.7 }}>
+                                {formatDateDisplay(date).slice(0, 5)}
                               </div>
-                            </td>
+                              {evs.map((ev) => (
+                                <div
+                                  key={ev.id}
+                                  onClick={() => openEditEventModal(ev)}
+                                  title={ev.description}
+                                  style={{
+                                    fontSize: 10,
+                                    marginTop: 4,
+                                    padding: "2px 6px",
+                                    background: "#FEF3C7",
+                                    color: "#92400E",
+                                    borderRadius: 6,
+                                    fontWeight: 600,
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  📌 {ev.title.slice(0, 14)}
+                                </div>
+                              ))}
+                            </th>
                           );
                         })}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {employees.map((emp) => (
+                        <tr key={emp.id} className="t-row">
+                          <td className="opt-col-employee-body">
+                            <div className="employee-card2">
+                              <Avatar emp={emp} size={42} />
+                              <div className="emp-name2">
+                                {emp.isAdmin && (
+                                  <span className="admin-star-mini">★</span>
+                                )}{" "}
+                                {emp.name}
+                              </div>
+                            </div>
+                          </td>
+                          {dates.map((date) => {
+                            const entry = getCell(emp.id, date);
+                            const isFrei =
+                              entry.color === "frei" && !entry.note;
+                            const ci = SHIFT_COLORS[entry.color];
+                            return (
+                              <td
+                                key={date}
+                                className="opt-col-body editable-opt"
+                                onClick={() => handleCellClick(emp, date)}
+                              >
+                                <div
+                                  className={`shift-pill ${isFrei ? "frei" : ""}`}
+                                  style={
+                                    !isFrei
+                                      ? {
+                                          borderColor: ci.bg,
+                                          background: ci.bg + "14",
+                                          color: ci.bg,
+                                        }
+                                      : {}
+                                  }
+                                >
+                                  <span>{pillLabel(entry)}</span>
+                                </div>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
+            )}
           </>
         )}
 
         {activeNav === "krankenstand" && !isPlanner && <SickLeaveUpload />}
+        {activeNav === "urlaub" && !isPlanner && <VacationRequest />}
         {activeNav === "krankenbescheinigungen" && isPlanner && (
           <BLOverview onChange={refreshUnread} />
+        )}
+        {activeNav === "urlaubsantraege" && isPlanner && (
+          <VacationAdmin onChange={refreshUnread} />
         )}
 
         {activeNav === "settings" && (
