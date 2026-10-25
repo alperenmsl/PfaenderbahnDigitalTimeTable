@@ -3,6 +3,7 @@ import { supabase } from "../supabaseClient";
 import { SHIFT_COLORS } from "../data";
 import type { ShiftColor } from "../types";
 
+import BIcon from "../components/BIcon";
 type Props = {
   userId: string;
   fullName: string;
@@ -270,7 +271,8 @@ export default function Settings({
       {/* Kalender-Export */}
       <div style={cardStyle}>
         <h3 style={{ fontSize: 16, fontWeight: 800, marginBottom: 6 }}>
-          📅 In den Handy-Kalender übernehmen
+          <BIcon name="calendar-event" size={16} /> In den Handy-Kalender
+          übernehmen
         </h3>
         <p
           style={{
@@ -303,7 +305,7 @@ export default function Settings({
       {/* PIN */}
       <form onSubmit={changePw} style={cardStyle}>
         <h3 style={{ fontSize: 16, fontWeight: 800, marginBottom: 14 }}>
-          🔒 PIN / Passwort ändern
+          <BIcon name="lock" size={16} /> PIN / Passwort ändern
         </h3>
         <div
           style={{

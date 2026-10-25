@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../supabaseClient";
+import PageHero from "../components/PageHero";
 
+import BIcon from "../components/BIcon";
 type Row = {
   id: string;
   date_from: string;
@@ -10,20 +12,25 @@ type Row = {
 };
 
 const fmt = (iso: string) => iso.split("-").reverse().join(".");
+const dayCount = (a: string, b: string) =>
+  Math.round((Date.parse(b) - Date.parse(a)) / 86400000) + 1;
+
 const STATUS = {
   submitted: {
     text: "Wartet auf Genehmigung",
-    color: "#D97706",
+    color: "#B45309",
     bg: "#FFFBEB",
   },
   confirmed: { text: "Genehmigt", color: "#059669", bg: "#ECFDF5" },
   rejected: { text: "Abgelehnt", color: "#DC2626", bg: "#FEF2F2" },
 };
 const labelStyle: React.CSSProperties = {
+  display: "block",
   fontSize: 12,
   fontWeight: 700,
   color: "#6B7385",
   textTransform: "uppercase",
+  marginBottom: 6,
 };
 
 export default function VacationRequest() {
@@ -84,167 +91,208 @@ export default function VacationRequest() {
     load();
   };
 
+  const days = from && to && to >= from ? dayCount(from, to) : null;
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const upcoming = rows.filter(
+    (r) => r.status === "confirmed" && r.date_to >= todayIso,
+  );
+
   return (
     <div
-      style={{ maxWidth: 800, width: "100%", margin: "0 auto", paddingTop: 20 }}
+      style={{
+        maxWidth: 1000,
+        width: "100%",
+        margin: "0 auto",
+        paddingTop: 20,
+      }}
     >
-      <div className="page-header" style={{ marginBottom: 24 }}>
-        <div className="page-title-section">
-          <h1 className="page-title">
-            <span className="brand-blue">Urlaub</span>
-            <span className="brand-divider"> - </span>
-            <span className="brand-rest">Antrag</span>
-          </h1>
-          <p className="page-subtitle">
-            Beantrage deinen Urlaub, Bertl genehmigt ihn.
-          </p>
-        </div>
-      </div>
+      <PageHero
+        variant="sun"
+        icon={<BIcon name="sun" size={30} />}
+        title="Urlaubsantrag"
+        subtitle="Plane deinen Urlaub, Bertl genehmigt ihn und trägt ihn im Dienstplan ein."
+      />
 
-      <form
-        onSubmit={submit}
-        style={{
-          background: "#fff",
-          borderRadius: 16,
-          padding: 28,
-          border: "1px solid #EEF0F4",
-          marginBottom: 24,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            gap: 20,
-            flexWrap: "wrap",
-            marginBottom: 18,
-          }}
-        >
-          <div style={{ flex: "1 1 180px" }}>
-            <label style={labelStyle}>Von</label>
-            <input
-              type="date"
-              className="opt-input"
-              value={from}
-              required
-              onChange={(e) => setFrom(e.target.value)}
-              style={{ marginTop: 6, width: "100%" }}
-            />
-          </div>
-          <div style={{ flex: "1 1 180px" }}>
-            <label style={labelStyle}>Bis (inklusive)</label>
-            <input
-              type="date"
-              className="opt-input"
-              value={to}
-              min={from}
-              required
-              onChange={(e) => setTo(e.target.value)}
-              style={{ marginTop: 6, width: "100%" }}
-            />
-          </div>
-        </div>
-        <label style={labelStyle}>Anmerkung (optional)</label>
-        <input
-          className="opt-input"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="z. B. Familienurlaub"
-          style={{ marginTop: 6, marginBottom: 20, width: "100%" }}
-        />
-        <button
-          type="submit"
-          className="btn-save"
-          disabled={busy}
-          style={{
-            padding: "12px 28px",
-            borderRadius: 99,
-            opacity: busy ? 0.7 : 1,
-          }}
-        >
-          {busy ? "Wird gesendet..." : "Urlaub beantragen"}
-        </button>
-        {msg && (
-          <p
+      <div className="form-layout">
+        <form className="form-card" onSubmit={submit}>
+          <div
             style={{
-              marginTop: 12,
-              fontSize: 13,
-              fontWeight: 600,
-              color: msg.ok ? "#059669" : "#DC2626",
+              display: "flex",
+              gap: 18,
+              flexWrap: "wrap",
+              marginBottom: 16,
             }}
           >
-            {msg.text}
-          </p>
-        )}
-      </form>
+            <div style={{ flex: "1 1 190px" }}>
+              <label style={labelStyle}>Von</label>
+              <input
+                type="date"
+                className="opt-input"
+                value={from}
+                required
+                onChange={(e) => setFrom(e.target.value)}
+                style={{ width: "100%" }}
+              />
+            </div>
+            <div style={{ flex: "1 1 190px" }}>
+              <label style={labelStyle}>Bis (inklusive)</label>
+              <input
+                type="date"
+                className="opt-input"
+                value={to}
+                min={from}
+                required
+                onChange={(e) => setTo(e.target.value)}
+                style={{ width: "100%" }}
+              />
+            </div>
+          </div>
 
-      <h3 style={{ fontSize: 15, fontWeight: 800, marginBottom: 12 }}>
-        Meine Anträge
-      </h3>
-      {rows.length === 0 ? (
-        <div style={{ color: "#6B7385", fontSize: 14 }}>
-          Noch keine Anträge.
-        </div>
-      ) : (
-        rows.map((r) => {
-          const s = STATUS[r.status];
-          return (
+          {days && (
             <div
-              key={r.id}
+              className="dur-chip"
               style={{
-                background: "#fff",
-                border: "1px solid #EEF0F4",
-                borderRadius: 14,
-                padding: "14px 18px",
-                marginBottom: 10,
-                display: "flex",
-                alignItems: "center",
-                gap: 14,
-                flexWrap: "wrap",
+                marginBottom: 18,
+                background: "#FEF3C7",
+                color: "#92400E",
               }}
             >
-              <div style={{ flex: "1 1 200px" }}>
-                <div style={{ fontWeight: 800 }}>
-                  {fmt(r.date_from)} – {fmt(r.date_to)}
-                </div>
-                {r.note && (
-                  <div style={{ fontSize: 13, color: "#6B7385", marginTop: 2 }}>
-                    {r.note}
-                  </div>
-                )}
-              </div>
-              <span
+              <BIcon name="sun" size={14} /> {days}{" "}
+              {days === 1 ? "Tag" : "Tage"} Urlaub
+            </div>
+          )}
+
+          <label style={labelStyle}>Anmerkung (optional)</label>
+          <input
+            className="opt-input"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="z. B. Familienurlaub"
+            style={{ width: "100%", marginBottom: 20 }}
+          />
+
+          <div style={{ borderTop: "1px solid #EEF0F4", paddingTop: 20 }}>
+            <button
+              type="submit"
+              className="btn-save"
+              disabled={busy}
+              style={{
+                padding: "12px 28px",
+                borderRadius: 99,
+                opacity: busy ? 0.7 : 1,
+              }}
+            >
+              {busy ? "Wird gesendet..." : "Urlaub beantragen"}
+            </button>
+            {msg && (
+              <p
                 style={{
-                  background: s.bg,
-                  color: s.color,
-                  padding: "5px 12px",
-                  borderRadius: 99,
-                  fontSize: 12,
-                  fontWeight: 700,
+                  marginTop: 12,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: msg.ok ? "#059669" : "#DC2626",
                 }}
               >
-                {s.text}
-              </span>
-              {r.status === "submitted" && (
-                <button
-                  onClick={() => withdraw(r.id)}
-                  style={{
-                    background: "#FEF2F2",
-                    color: "#DC2626",
-                    border: "1px solid #FECACA",
-                    padding: "6px 12px",
-                    borderRadius: 8,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: "pointer",
-                  }}
-                >
-                  Zurückziehen
-                </button>
-              )}
+                {msg.text}
+              </p>
+            )}
+          </div>
+        </form>
+
+        <div>
+          {upcoming.length > 0 && (
+            <div
+              className="info-card"
+              style={{
+                background: "linear-gradient(135deg,#FFFBEB,#FFF)",
+                borderColor: "#FDE68A",
+              }}
+            >
+              <h3>
+                <BIcon name="sun" size={15} /> Dein nächster Urlaub
+              </h3>
+              <div style={{ fontSize: 18, fontWeight: 800, color: "#92400E" }}>
+                {fmt(upcoming[upcoming.length - 1].date_from)} –{" "}
+                {fmt(upcoming[upcoming.length - 1].date_to)}
+              </div>
             </div>
-          );
-        })
-      )}
+          )}
+
+          <div className="info-card">
+            <h3>So geht es weiter</h3>
+            <div className="step-row">
+              <span className="step-num">1</span>
+              <span>Du reichst den Antrag mit Zeitraum ein.</span>
+            </div>
+            <div className="step-row">
+              <span className="step-num">2</span>
+              <span>Bertl genehmigt oder lehnt ab.</span>
+            </div>
+            <div className="step-row">
+              <span className="step-num">3</span>
+              <span>Genehmigter Urlaub erscheint im Dienstplan.</span>
+            </div>
+          </div>
+
+          <div className="info-card">
+            <h3>Meine Anträge</h3>
+            {rows.length === 0 ? (
+              <div style={{ color: "#8E97A9", fontSize: 13.5 }}>
+                Noch keine Anträge.
+              </div>
+            ) : (
+              rows.map((r) => {
+                const s = STATUS[r.status];
+                return (
+                  <div
+                    key={r.id}
+                    className="hist-row"
+                    style={{ flexWrap: "wrap" }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 700 }}>
+                        {fmt(r.date_from)} – {fmt(r.date_to)}
+                      </div>
+                      {r.note && (
+                        <div style={{ fontSize: 12, color: "#6B7385" }}>
+                          {r.note}
+                        </div>
+                      )}
+                    </div>
+                    <div
+                      style={{ display: "flex", gap: 8, alignItems: "center" }}
+                    >
+                      <span
+                        className="status-pill"
+                        style={{ background: s.bg, color: s.color }}
+                      >
+                        {s.text}
+                      </span>
+                      {r.status === "submitted" && (
+                        <button
+                          onClick={() => withdraw(r.id)}
+                          style={{
+                            background: "#FEF2F2",
+                            color: "#DC2626",
+                            border: "1px solid #FECACA",
+                            padding: "3px 9px",
+                            borderRadius: 8,
+                            fontSize: 11.5,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Zurückziehen
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

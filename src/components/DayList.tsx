@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import type { Employee, ShiftEntry, DayEvent } from "../types";
 
+import BIcon from "./BIcon";
 type Props = {
   dates: string[];
   employees: Employee[];
@@ -70,7 +71,7 @@ export default function DayList({
 
       {events.map((ev) => (
         <div key={ev.id} className="m-event">
-          📌 {ev.title}
+          <BIcon name="pin-angle" size={13} /> {ev.title}
         </div>
       ))}
 

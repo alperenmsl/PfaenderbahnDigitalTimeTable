@@ -3,6 +3,7 @@ import { supabase } from "../supabaseClient";
 import { SHIFT_COLORS } from "../data";
 import type { Employee, ShiftColor } from "../types";
 
+import BIcon from "./BIcon";
 type Props = { employees: Employee[]; meId: string };
 
 type Entry = { employee_id: string; shift_color: string; note: string | null };
@@ -71,7 +72,9 @@ export default function DashboardWidgets({ employees, meId }: Props) {
     <div className="dash-grid">
       <div className="dash-card">
         <div className="dash-title">
-          <span>🚡 Heute im Dienst</span>
+          <span>
+            <BIcon name="people" size={16} /> Heute im Dienst
+          </span>
           {today && <span className="dash-count">{working.length}</span>}
         </div>
 
@@ -132,7 +135,9 @@ export default function DashboardWidgets({ employees, meId }: Props) {
 
       <div className="dash-card">
         <div className="dash-title">
-          <span>📌 Termine & Hinweise</span>
+          <span>
+            <BIcon name="pin-angle" size={16} /> Termine &amp; Hinweise
+          </span>
           {events && <span className="dash-count">{events.length}</span>}
         </div>
 

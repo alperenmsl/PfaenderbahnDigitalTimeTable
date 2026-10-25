@@ -5,9 +5,9 @@ import Login from "./pages/Login";
 import SickLeaveUpload from "./pages/SickLeaveUpload";
 import BLOverview from "./pages/BLOverview";
 import VacationRequest from "./pages/VacationRequest";
-import Logo from "./components/Logo";
 import VacationAdmin from "./pages/VacationAdmin";
 import DayList from "./components/DayList";
+import Logo from "./components/Logo";
 import Settings from "./pages/Settings";
 import DashboardWidgets from "./components/DashboardWidgets";
 import "./theme.css";
@@ -29,6 +29,7 @@ import {
   Employee,
 } from "./types";
 
+import BIcon from "./components/BIcon";
 type Profile = { id: string; full_name: string; role: "employee" | "planner" };
 
 /* ---------- Hilfsfunktionen ---------- */
@@ -435,16 +436,18 @@ function App() {
           .delete()
           .eq("employee_id", empId)
           .eq("date", toISO(date))
-      : await supabase.from("schedule").upsert(
-          {
-            employee_id: empId,
-            date: toISO(date),
-            shift_color: color,
-            note: cleanNote || null,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "employee_id,date" },
-        );
+      : await supabase
+          .from("schedule")
+          .upsert(
+            {
+              employee_id: empId,
+              date: toISO(date),
+              shift_color: color,
+              note: cleanNote || null,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "employee_id,date" },
+          );
     if (error) return alert("Speichern fehlgeschlagen: " + error.message);
 
     setSchedule((prev) => {
@@ -756,7 +759,9 @@ function App() {
                     {pillLabel(todayEntry)}
                   </div>
                 ) : (
-                  <div className="hero-today-free">Heute frei 🌤</div>
+                  <div className="hero-today-free">
+                    <BIcon name="cloud-sun" size={20} /> Heute frei
+                  </div>
                 )}
                 <div className="hero-next">
                   {nextShift ? (
@@ -1007,7 +1012,8 @@ function App() {
                                     fontWeight: 600,
                                   }}
                                 >
-                                  📌 {dayEvents[0].title.slice(0, 12)}
+                                  <BIcon name="pin-angle" size={9} />{" "}
+                                  {dayEvents[0].title.slice(0, 12)}
                                 </div>
                               )}
                             </div>
@@ -1195,7 +1201,8 @@ function App() {
                                     cursor: "pointer",
                                   }}
                                 >
-                                  📌 {ev.title.slice(0, 14)}
+                                  <BIcon name="pin-angle" size={10} />{" "}
+                                  {ev.title.slice(0, 14)}
                                 </div>
                               ))}
                             </th>
