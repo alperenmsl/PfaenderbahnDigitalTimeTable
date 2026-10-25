@@ -170,6 +170,8 @@ function App() {
 
   const [schedule, setSchedule] = useState<ScheduleData>({});
   const [events, setEvents] = useState<DayEvent[]>([]);
+  const [published, setPublished] = useState<ScheduleData>({});
+  const [publishing, setPublishing] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadVac, setUnreadVac] = useState(0);
 
@@ -218,6 +220,29 @@ function App() {
   );
   const me = employees.find((e) => e.id === session?.user.id);
 
+  // Zellen, in denen der Entwurf vom veröffentlichten Plan abweicht
+  const changedKeys = useMemo(() => {
+    const changed = new Set<string>();
+    if (!isPlanner) return changed;
+    const keys = new Set<string>();
+    [schedule, published].forEach((s) =>
+      Object.keys(s).forEach((emp) =>
+        Object.keys(s[emp]).forEach((d) => keys.add(`${emp}|${d}`)),
+      ),
+    );
+    keys.forEach((k) => {
+      const [emp, d] = k.split("|");
+      const a = schedule[emp]?.[d];
+      const b = published[emp]?.[d];
+      if (
+        (a?.color ?? "frei") !== (b?.color ?? "frei") ||
+        (a?.note ?? "") !== (b?.note ?? "")
+      )
+        changed.add(k);
+    });
+    return changed;
+  }, [schedule, published, isPlanner]);
+
   /* --- Uhr --- */
   useEffect(() => {
     const t = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -258,27 +283,35 @@ function App() {
   const loadWeek = useCallback(async () => {
     const from = toISO(dates[0]);
     const to = toISO(dates[6]);
-    const [{ data: sch }, { data: ev }] = await Promise.all([
+    const read = (table: string) =>
       supabase
-        .from("schedule")
+        .from(table)
         .select("employee_id, date, shift_color, note")
         .gte("date", from)
-        .lte("date", to),
+        .lte("date", to);
+    const toData = (rows: any[] | null): ScheduleData => {
+      const parsed: ScheduleData = {};
+      (rows ?? []).forEach((r) => {
+        (parsed[r.employee_id] ??= {})[fromISO(r.date)] = {
+          color: r.shift_color as ShiftColor,
+          note: r.note || undefined,
+        };
+      });
+      return parsed;
+    };
+    // Mitarbeiter sehen nur den veröffentlichten Plan, der Planer zusätzlich den Entwurf
+    const [{ data: pub }, { data: ev }, draftRes] = await Promise.all([
+      read("schedule_published"),
       supabase
         .from("events")
         .select("id, date, title, description")
         .gte("date", from)
         .lte("date", to),
+      isPlanner ? read("schedule") : Promise.resolve(null),
     ]);
-    const parsed: ScheduleData = {};
-    (sch ?? []).forEach((r) => {
-      const d = fromISO(r.date);
-      (parsed[r.employee_id] ??= {})[d] = {
-        color: r.shift_color as ShiftColor,
-        note: r.note || undefined,
-      };
-    });
-    setSchedule(parsed);
+    const pubData = toData(pub);
+    setPublished(pubData);
+    setSchedule(draftRes ? toData(draftRes.data) : pubData);
     setEvents(
       (ev ?? []).map((e) => ({
         id: e.id,
@@ -287,7 +320,7 @@ function App() {
         description: e.description || undefined,
       })),
     );
-  }, [dates]);
+  }, [dates, isPlanner]);
 
   // Auch beim Zurückwechseln zur Übersicht neu laden (z. B. nach Bestätigung einer Krankmeldung)
   useEffect(() => {
@@ -365,6 +398,41 @@ function App() {
     });
     setEditingCell(null);
     setNoteInput("");
+  };
+
+  /* --- Veröffentlichen / Verwerfen --- */
+  const publishWeek = async () => {
+    if (
+      !window.confirm(
+        `Woche ${currentWeekRange} jetzt für alle Mitarbeiter veröffentlichen?`,
+      )
+    )
+      return;
+    setPublishing(true);
+    const { error } = await supabase.rpc("publish_week", {
+      p_from: toISO(dates[0]),
+      p_to: toISO(dates[6]),
+    });
+    setPublishing(false);
+    if (error) return alert("Veröffentlichen fehlgeschlagen: " + error.message);
+    await loadWeek();
+  };
+
+  const revertWeek = async () => {
+    if (
+      !window.confirm(
+        "Alle Änderungen dieser Woche verwerfen und den veröffentlichten Plan wiederherstellen?",
+      )
+    )
+      return;
+    setPublishing(true);
+    const { error } = await supabase.rpc("revert_week", {
+      p_from: toISO(dates[0]),
+      p_to: toISO(dates[6]),
+    });
+    setPublishing(false);
+    if (error) return alert("Verwerfen fehlgeschlagen: " + error.message);
+    await loadWeek();
   };
 
   /* --- Events --- */
@@ -886,11 +954,67 @@ function App() {
               </div>
             </div>
 
-            <div className="admin-banner">
+            <div
+              className="admin-banner"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
               <span>
-                Als <strong>{profile.full_name}</strong> angemeldet — klicke auf
-                eine Zelle, um den Dienstplan zu bearbeiten.
+                {changedKeys.size > 0 ? (
+                  <>
+                    <strong style={{ color: "#B45309" }}>● Entwurf:</strong>{" "}
+                    {changedKeys.size}{" "}
+                    {changedKeys.size === 1 ? "Änderung" : "Änderungen"} noch
+                    nicht veröffentlicht. Mitarbeiter sehen noch den alten Plan.
+                  </>
+                ) : (
+                  <>
+                    <strong style={{ color: "#059669" }}>
+                      ✓ Veröffentlicht:
+                    </strong>{" "}
+                    Mitarbeiter sehen den aktuellen Plan dieser Woche. Klicke
+                    auf eine Zelle, um zu bearbeiten.
+                  </>
+                )}
               </span>
+              <div style={{ display: "flex", gap: 8 }}>
+                {changedKeys.size > 0 && (
+                  <button
+                    onClick={revertWeek}
+                    disabled={publishing}
+                    style={{
+                      background: "#fff",
+                      color: "#6B7385",
+                      border: "1px solid #E5E7EB",
+                      padding: "8px 14px",
+                      borderRadius: 8,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Verwerfen
+                  </button>
+                )}
+                <button
+                  onClick={publishWeek}
+                  disabled={publishing || changedKeys.size === 0}
+                  className="btn-save"
+                  style={{
+                    padding: "8px 18px",
+                    borderRadius: 99,
+                    fontSize: 13,
+                    opacity: publishing || changedKeys.size === 0 ? 0.5 : 1,
+                  }}
+                >
+                  {publishing ? "Bitte warten..." : "Woche veröffentlichen"}
+                </button>
+              </div>
             </div>
 
             {isMobile ? (
@@ -972,15 +1096,18 @@ function App() {
                               >
                                 <div
                                   className={`shift-pill ${isFrei ? "frei" : ""}`}
-                                  style={
-                                    !isFrei
+                                  style={{
+                                    ...(!isFrei
                                       ? {
                                           borderColor: ci.bg,
                                           background: ci.bg + "14",
                                           color: ci.bg,
                                         }
-                                      : {}
-                                  }
+                                      : {}),
+                                    ...(changedKeys.has(`${emp.id}|${date}`)
+                                      ? { boxShadow: "0 0 0 2px #F59E0B" }
+                                      : {}),
+                                  }}
                                 >
                                   <span>{pillLabel(entry)}</span>
                                 </div>
