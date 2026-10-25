@@ -1,8 +1,8 @@
-   node_modules
-   dist
-   logs
-   *.log
-   .env
-   .env.*
-   pins.csv
-   create-users*
+node_modules
+dist
+logs
+*.log
+.env
+.env.*
+pins.csv
+create-users*
