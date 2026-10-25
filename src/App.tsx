@@ -5,8 +5,12 @@ import Login from "./pages/Login";
 import SickLeaveUpload from "./pages/SickLeaveUpload";
 import BLOverview from "./pages/BLOverview";
 import VacationRequest from "./pages/VacationRequest";
+import Logo from "./components/Logo";
 import VacationAdmin from "./pages/VacationAdmin";
 import DayList from "./components/DayList";
+import Settings from "./pages/Settings";
+import DashboardWidgets from "./components/DashboardWidgets";
+import "./theme.css";
 import "./mobile.css";
 import {
   EMPLOYEES,
@@ -118,9 +122,16 @@ function Icon({ children }: { children: React.ReactNode }) {
   );
 }
 
-const pillStyle = (entry: ShiftEntry, compact = false): React.CSSProperties => {
+// Farben eines Dienst-Chips (Hintergrund und Schrift)
+const chip = (entry: ShiftEntry) => {
+  if (entry.color === "frei") return { bg: "#EAF2FF", fg: "#0A4FA8" }; // nur Notiz
   const ci = SHIFT_COLORS[entry.color];
+  return { bg: ci.bg, fg: entry.color === "krank" ? "#37474F" : ci.text };
+};
+
+const pillStyle = (entry: ShiftEntry, compact = false): React.CSSProperties => {
   const isFrei = entry.color === "frei" && !entry.note;
+  const c = chip(entry);
   const base: React.CSSProperties = compact
     ? {
         fontSize: 11.5,
@@ -128,23 +139,24 @@ const pillStyle = (entry: ShiftEntry, compact = false): React.CSSProperties => {
         borderRadius: 9,
         width: "100%",
         textAlign: "center",
-        fontWeight: 600,
         lineHeight: 1.3,
-        border: "1px solid transparent",
       }
     : {};
   return isFrei
     ? {
         ...base,
-        background: "#F2F5FA",
-        color: "#8E97A9",
-        borderColor: "#EEF0F4",
+        background: "transparent",
+        color: "#A3ACBD",
+        border: "1px dashed #DDE3EE",
+        fontWeight: 500,
       }
     : {
         ...base,
-        borderColor: ci.bg,
-        background: ci.bg + "1A",
-        color: ci.text === "#FFFFFF" ? ci.bg : ci.text,
+        background: c.bg,
+        color: c.fg,
+        border: `1px solid ${c.bg}`,
+        fontWeight: 700,
+        boxShadow: "0 2px 8px rgba(15,23,42,0.12)",
       };
 };
 const pillLabel = (entry: ShiftEntry, freiText = "Frei") =>
@@ -171,6 +183,11 @@ function App() {
   const [schedule, setSchedule] = useState<ScheduleData>({});
   const [events, setEvents] = useState<DayEvent[]>([]);
   const [published, setPublished] = useState<ScheduleData>({});
+  const [todayEntry, setTodayEntry] = useState<ShiftEntry | null>(null);
+  const [nextShift, setNextShift] = useState<{
+    date: string;
+    entry: ShiftEntry;
+  } | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadVac, setUnreadVac] = useState(0);
@@ -191,11 +208,6 @@ function App() {
     title: "",
     description: "",
   });
-
-  const [pwNew, setPwNew] = useState("");
-  const [pwMsg, setPwMsg] = useState<{ ok: boolean; text: string } | null>(
-    null,
-  );
 
   const [isMobile, setIsMobile] = useState(
     () => window.matchMedia("(max-width: 768px)").matches,
@@ -345,6 +357,51 @@ function App() {
     refreshUnread();
   }, [refreshUnread]);
 
+  /* --- Heute / nächster Dienst (nur Mitarbeiter, nur veröffentlichter Plan) --- */
+  useEffect(() => {
+    if (!session || isPlanner) return;
+    const id = session.user.id;
+    const today = toISO(formatDate(new Date()));
+    (async () => {
+      const [t, n] = await Promise.all([
+        supabase
+          .from("schedule_published")
+          .select("shift_color, note")
+          .eq("employee_id", id)
+          .eq("date", today)
+          .maybeSingle(),
+        supabase
+          .from("schedule_published")
+          .select("date, shift_color, note")
+          .eq("employee_id", id)
+          .gt("date", today)
+          .not("shift_color", "in", "(frei,krank,urlaub)")
+          .order("date")
+          .limit(1)
+          .maybeSingle(),
+      ]);
+      setTodayEntry(
+        t.data
+          ? {
+              color: t.data.shift_color as ShiftColor,
+              note: t.data.note || undefined,
+            }
+          : null,
+      );
+      setNextShift(
+        n.data
+          ? {
+              date: fromISO(n.data.date),
+              entry: {
+                color: n.data.shift_color as ShiftColor,
+                note: n.data.note || undefined,
+              },
+            }
+          : null,
+      );
+    })();
+  }, [session, isPlanner, activeNav, published]);
+
   /* --- Navigation --- */
   const handleWeekChange = (offset: number) =>
     setWeekMonday(addWeeks(weekMonday, offset));
@@ -472,17 +529,6 @@ function App() {
   const getEventsForDate = (date: string) =>
     events.filter((e) => e.date === date);
 
-  /* --- PIN ändern --- */
-  const handleChangePw = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (pwNew.length < 6)
-      return setPwMsg({ ok: false, text: "Mindestens 6 Zeichen." });
-    const { error } = await supabase.auth.updateUser({ password: pwNew });
-    if (error) return setPwMsg({ ok: false, text: error.message });
-    setPwNew("");
-    setPwMsg({ ok: true, text: "PIN wurde geändert." });
-  };
-
   /* --- Anzeige-Texte --- */
   const currentWeekRange = (() => {
     const [fd, fm, fy] = dates[0].split("/");
@@ -537,10 +583,8 @@ function App() {
       {/* SIDEBAR */}
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <div className="logo-icon">
-            <Avatar emp={me} size={30} />
-          </div>
-          <span className="logo-text">OPTIVIO</span>
+          <Logo size={34} />
+          <span className="logo-text">Pfänderbahn</span>
         </div>
 
         <nav className="sidebar-nav">
@@ -633,6 +677,15 @@ function App() {
         </nav>
 
         <div className="sidebar-bottom">
+          <div className="sidebar-user">
+            <Avatar emp={me} size={34} />
+            <div>
+              <div className="su-name">{profile.full_name}</div>
+              <div className="su-role">
+                {isPlanner ? "Betriebsleiter" : "Mitarbeiter"}
+              </div>
+            </div>
+          </div>
           <div className="sidebar-divider" />
           <button
             className={`nav-item ${activeNav === "settings" ? "active" : ""}`}
@@ -663,31 +716,66 @@ function App() {
         {/* MITARBEITER-ÜBERSICHT */}
         {activeNav === "overview" && !isPlanner && (
           <>
-            <div className="employee-personal-header">
-              <div
-                className="employee-personal-avatar"
-                style={{ padding: 0, background: "#cbd5e1" }}
-              >
-                {me?.avatarUrl ? (
-                  <img
-                    src={me.avatarUrl}
-                    alt={me.name}
-                    className="avatar-img"
-                  />
-                ) : (
-                  getInitials(profile.full_name)
-                )}
-              </div>
-              <div className="employee-personal-meta">
-                <h2>{profile.full_name}</h2>
-                <p>
-                  Dein persönlicher Dienstplan •{" "}
-                  <span style={{ color: "var(--opt-blue)", fontWeight: 600 }}>
+            <div className="hero-card">
+              <div className="hero-left">
+                <div className="hero-avatar">
+                  {me?.avatarUrl ? (
+                    <img src={me.avatarUrl} alt={me.name} />
+                  ) : (
+                    getInitials(profile.full_name)
+                  )}
+                </div>
+                <div>
+                  <div className="hero-greet">
+                    {currentTime.getHours() < 11
+                      ? "Guten Morgen"
+                      : currentTime.getHours() < 18
+                        ? "Guten Tag"
+                        : "Guten Abend"}
+                    , {profile.full_name.split(" ")[0]}
+                  </div>
+                  <div className="hero-sub">
+                    {getWeekdayLong(formatDate(currentTime))},{" "}
+                    {formatDate(currentTime).replace(/\//g, ".")} •{" "}
                     {formatTime(currentTime)} Uhr
-                  </span>
-                </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="hero-today">
+                <div className="hero-today-label">Heute</div>
+                {todayEntry &&
+                !(todayEntry.color === "frei" && !todayEntry.note) ? (
+                  <div
+                    className="hero-today-shift"
+                    style={{
+                      background: chip(todayEntry).bg,
+                      color: chip(todayEntry).fg,
+                    }}
+                  >
+                    {pillLabel(todayEntry)}
+                  </div>
+                ) : (
+                  <div className="hero-today-free">Heute frei 🌤</div>
+                )}
+                <div className="hero-next">
+                  {nextShift ? (
+                    <>
+                      Nächster Dienst:{" "}
+                      <b>
+                        {getWeekdayLong(nextShift.date).slice(0, 2)},{" "}
+                        {nextShift.date.slice(0, 5).replace("/", ".")}.
+                      </b>{" "}
+                      – {pillLabel(nextShift.entry)}
+                    </>
+                  ) : (
+                    "Kein weiterer Dienst veröffentlicht"
+                  )}
+                </div>
               </div>
             </div>
+
+            <DashboardWidgets employees={employees} meId={profile.id} />
 
             <div
               style={{
@@ -940,7 +1028,7 @@ function App() {
             <div className="page-header">
               <div className="page-title-section">
                 <h1 className="page-title">
-                  <span className="brand-blue">Optivio</span> - Pfänderbahn
+                  <span className="brand-blue">Pfänderbahn</span> - Dienstplan
                 </h1>
                 <p className="page-subtitle">
                   Digitaler Dienstplan • {formatTime(currentTime)} Uhr
@@ -951,6 +1039,52 @@ function App() {
                 <button className="btn btn-action" onClick={openNewEventModal}>
                   Event
                 </button>
+              </div>
+            </div>
+
+            <div className="stat-grid">
+              <div
+                className="stat-card clickable"
+                onClick={() => setActiveNav("krankenbescheinigungen")}
+              >
+                <div
+                  className="stat-value"
+                  style={{ color: unreadCount > 0 ? "#DC2626" : "#059669" }}
+                >
+                  {unreadCount}
+                </div>
+                <div className="stat-label">Neue Krankmeldungen</div>
+              </div>
+              <div
+                className="stat-card clickable"
+                onClick={() => setActiveNav("urlaubsantraege")}
+              >
+                <div
+                  className="stat-value"
+                  style={{ color: unreadVac > 0 ? "#D97706" : "#059669" }}
+                >
+                  {unreadVac}
+                </div>
+                <div className="stat-label">Offene Urlaubsanträge</div>
+              </div>
+              <div className="stat-card">
+                <div
+                  className="stat-value"
+                  style={{
+                    color: changedKeys.size > 0 ? "#D97706" : "#059669",
+                  }}
+                >
+                  {changedKeys.size}
+                </div>
+                <div className="stat-label">
+                  Unveröffentlichte Änderungen (Woche)
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-value" style={{ color: "#0A4FA8" }}>
+                  {employees.length}
+                </div>
+                <div className="stat-label">Mitarbeiter im Team</div>
               </div>
             </div>
 
@@ -1100,8 +1234,9 @@ function App() {
                                     ...(!isFrei
                                       ? {
                                           borderColor: ci.bg,
-                                          background: ci.bg + "14",
-                                          color: ci.bg,
+                                          background: chip(entry).bg,
+                                          color: chip(entry).fg,
+                                          fontWeight: 700,
                                         }
                                       : {}),
                                     ...(changedKeys.has(`${emp.id}|${date}`)
@@ -1134,68 +1269,12 @@ function App() {
         )}
 
         {activeNav === "settings" && (
-          <div style={{ maxWidth: 520, margin: "0 auto", paddingTop: 20 }}>
-            <div className="page-header" style={{ marginBottom: 24 }}>
-              <div className="page-title-section">
-                <h1 className="page-title">
-                  <span className="brand-blue">Einstellungen</span>
-                </h1>
-                <p className="page-subtitle">
-                  Hier kannst du deine PIN ändern.
-                </p>
-              </div>
-            </div>
-            <form
-              onSubmit={handleChangePw}
-              style={{
-                background: "#fff",
-                borderRadius: 16,
-                padding: 28,
-                border: "1px solid #EEF0F4",
-              }}
-            >
-              <label
-                style={{
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: "#6B7385",
-                  textTransform: "uppercase",
-                }}
-              >
-                Neue PIN / neues Passwort
-              </label>
-              <input
-                type="password"
-                className="opt-input"
-                autoComplete="new-password"
-                value={pwNew}
-                onChange={(e) => {
-                  setPwNew(e.target.value);
-                  setPwMsg(null);
-                }}
-                style={{ marginTop: 6, marginBottom: 16 }}
-              />
-              <button
-                type="submit"
-                className="btn-save"
-                style={{ padding: "10px 24px", borderRadius: 99 }}
-              >
-                PIN ändern
-              </button>
-              {pwMsg && (
-                <p
-                  style={{
-                    marginTop: 12,
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: pwMsg.ok ? "#059669" : "#DC2626",
-                  }}
-                >
-                  {pwMsg.text}
-                </p>
-              )}
-            </form>
-          </div>
+          <Settings
+            userId={profile.id}
+            fullName={profile.full_name}
+            isPlanner={isPlanner}
+            avatarUrl={me?.avatarUrl}
+          />
         )}
       </main>
 

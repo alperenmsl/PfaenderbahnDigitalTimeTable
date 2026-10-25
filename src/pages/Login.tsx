@@ -49,7 +49,7 @@ export default function Login() {
       <form className="login-blur-card" onSubmit={login}>
         <div className="login-brand-row">
           <div className="login-brand-icon" />
-          <div className="login-brand-title">OPTIVIO</div>
+          <div className="login-brand-title">Pfänderbahn</div>
         </div>
         <div className="login-brand-sub">Pfänderbahn Mitarbeiter Portal</div>
 
@@ -139,7 +139,16 @@ export default function Login() {
         </button>
 
         <div className="login-foot-white">
-          © 2026 OPTIVIO • Pfänderbahn Mitarbeiter Portal
+          © 2026{" "}
+          <a
+            className="foot-link"
+            href="https://axeoninformatics.rf.gd"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Axeoninformatics
+          </a>{" "}
+          - Pfänderbahn Mitarbeiter Portal
         </div>
       </form>
     </div>
