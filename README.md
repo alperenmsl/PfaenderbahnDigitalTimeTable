@@ -1,44 +1,64 @@
 <div align="center">
 
-# 🚡 Pfänderbahn – Digitales Mitarbeiterportal
+# 🚡 Pfänderbahn // Digital TimeTable[cite: 4]
 
-> **Das moderne digitale Dienstplan- und Verwaltungssystem für die Mitarbeiter der Pfänderbahn.**  
-> _Schluss mit Zettelwirtschaft – Dienstzeiten, Krankenstände und Urlaubsanträge digital an einem Ort._
+### _Next-Gen Employee Management & Operations Portal_
+
+<p align="center">
+  <img src="https://img.shields.io/badge/STATUS-ONLINE-success?style=for-the-badge&logo=opsgenie&logoColor=white" />
+  <img src="https://img.shields.io/badge/TYPESCRIPT-71.9%25-blue?style=for-the-badge&logo=typescript&logoColor=white"[cite: 4] />
+  <img src="https://img.shields.io/badge/CSS-27.9%25-orange?style=for-the-badge&logo=css3&logoColor=white"[cite: 4] />
+  <img src="https://img.shields.io/badge/SECURITY-SECURE-neon?style=for-the-badge&logo=letsencrypt&logoColor=white" />
+</p>
 
 </div>
 
 ---
 
-## 📱 Ein Blick in das Projekt
+## ⚡ System-Overview
+
+Das **Pfänderbahn Portal** ist eine hochmoderne, webbasierte Operations-Plattform zur vollständigen Digitalisierung interner Personalprozesse[cite: 4]. Sie ersetzt veraltete Zettelwirtschaft durch ein nahtloses, intuitives Ökosystem für Schichtpläne, Krankenstände und Urlaubsanträge[cite: 4].
+
+---
+
+## 🚀 Hauptfeatures
+
+- **📅 Digitaler Dienstplan (TimeTable):** Echtzeit-Einsicht in persönliche und teamübergreifende Schichten, Wochenansichten und Schichtstatus[cite: 1].
+- **🏥 Digitale Krankenstand-Übermittlung:** Direktes Hochladen von Krankenzetteln (Foto/PDF) mit integriertem Status-Tracking (_Wird geprüft / Bestätigt_)[cite: 2].
+- **🌴 Automatisierte Urlaubsbeantragung:** Nahtloses Einreichen von Urlauben, Live-Status-Updates (_Genehmigt / Abgelehnt_) und Countdown zum nächsten Urlaub[cite: 3].
+- **🔐 Authentifizierung & Rollen:** Sichere Verwaltung von Mitarbeiter- und Admin-Berechtigungen.
+
+---
+
+## 🛠️ Tech Stack & Tools
 
 <div align="center">
-  <img src="docs/dashboard.png" width="800" alt="Dashboard">
+
+| Kategorie           | Technologie                                                                                                                                                                                                                                                                                                       |
+| :------------------ | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Frontend**        | ![TypeScript](https://img.shields.io/badge/-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white) ![CSS3](https://img.shields.io/badge/-CSS3-1572B6?style=flat-square&logo=css3&logoColor=white) ![HTML5](https://img.shields.io/badge/-HTML5-E34F26?style=flat-square&logo=html5&logoColor=white) |
+| **Build Tool**      | ![Vite](https://img.shields.io/badge/-Vite-646CFF?style=flat-square&logo=vite&logoColor=white)                                                                                                                                                                                                                    |
+| **Backend / DB**    | ![Supabase](https://img.shields.io/badge/-Supabase-3FCF8E?style=flat-square&logo=supabase&logoColor=white)                                                                                                                                                                                                        |
+| **Version Control** | ![Git](https://img.shields.io/badge/-Git-F05032?style=flat-square&logo=git&logoColor=white) ![GitHub](https://img.shields.io/badge/-GitHub-181717?style=flat-square&logo=github&logoColor=white)                                                                                                                  |
+
 </div>
 
 ---
 
-## 🌟 Features
+## 📦 Quick Start
 
-- **Übersichtliches Dashboard:** Sofortiger Blick auf die aktuellen Dienstzeiten der Woche, den Schichtstatus und wichtige Hinweise bzw. Feiertage.
-- **Digitale Krankenmeldung:** Einfaches Hochladen von Krankenzetteln (Foto oder PDF) inklusive Statusverfolgung (`Wird geprüft` / `Bestätigt`)[cite: 2].
-- **Urlaubsmanagement:** Urlaubsanträge unkompliziert einreichen, den nächsten Urlaub im Blick behalten und den Status (`Genehmigt` / `Abgelehnt`) in Echtzeit verfolgen[cite: 3].
-- **Kollegen-Ansicht:** Optionaler Einblick in den allgemeinen Dienstplan, um Schichten im Team besser zu koordinieren[cite: 1].
+Führe die folgenden Befehle aus, um das Projekt lokal zu starten:
 
----
+```bash
+# 1. Repository klonen
+git clone [https://github.com/alperenmsl/PfaenderbahnPortal.git](https://github.com/alperenmsl/PfaenderbahnPortal.git)
 
-## 🛠️ Tech Stack
+# 2. In den Projektordner wechseln
+cd PfaenderbahnPortal
 
-- **Frontend:** TypeScript / HTML5, CSS3 / Tailwind CSS, JavaScript
-- **Datenbank:** SupaBase
-- **Hosting / Deployment:** Vercel
+# 3. Abhängigkeiten installieren
+npm install
 
----
-
-## 🚀 Quick Start
-
-Falls du das Projekt lokal ausführen möchtest:
-
-1. **Repository klonen**
-   ```bash
-   git clone [https://github.com/DEin-Benutzername/pfaenderbahn-portal.git](https://github.com/DEin-Benutzername/pfaenderbahn-portal.git)
-   ```
+# 4. Entwicklungsserver starten
+npm run dev
+```
