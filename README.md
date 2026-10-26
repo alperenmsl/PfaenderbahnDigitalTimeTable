@@ -12,8 +12,7 @@
 ## 📱 Ein Blick in das Projekt
 
 <div align="center">
-  <!-- Hier kannst du später deine Screenshots einbinden, z.B.: -->
-  <!-- <img src="docs/dashboard.png" width="800" alt="Dashboard"> -->
+  <img src="docs/dashboard.png" width="800" alt="Dashboard">
 </div>
 
 ---
@@ -29,12 +28,9 @@
 
 ## 🛠️ Tech Stack
 
-_(Passe diesen Abschnitt je nach deinen verwendeten Technologien an)_
-
-- **Frontend:** HTML5, CSS3 / Tailwind CSS, JavaScript (oder Framework wie React/Vue)
-- **Backend:** Node.js / Python / PHP (je nach Setup)
-- **Datenbank:** PostgreSQL / MySQL / MongoDB
-- **Hosting / Deployment:** Vercel / Netlify / Docker
+- **Frontend:** TypeScript / HTML5, CSS3 / Tailwind CSS, JavaScript
+- **Datenbank:** SupaBase
+- **Hosting / Deployment:** Vercel
 
 ---
 
