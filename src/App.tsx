@@ -8,6 +8,7 @@ import VacationRequest from "./pages/VacationRequest";
 import VacationAdmin from "./pages/VacationAdmin";
 import DayList from "./components/DayList";
 import Logo from "./components/Logo";
+import WeatherStatus from "./components/WeatherStatus";
 import TimeTracking from "./pages/Timetracking";
 import TimeAdmin from "./pages/Timeadmin";
 import Settings from "./pages/Settings";
@@ -805,7 +806,7 @@ function App() {
                 </div>
               </div>
             </div>
-
+            <WeatherStatus isPlanner={false} />
             <DashboardWidgets employees={employees} meId={profile.id} />
 
             <div
@@ -1073,7 +1074,7 @@ function App() {
                 </button>
               </div>
             </div>
-
+            <WeatherStatus isPlanner={true} />
             <div className="stat-grid">
               <div
                 className="stat-card clickable"
