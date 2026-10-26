@@ -15,7 +15,7 @@ import {
   exportAll,
   exportPerson,
   profileName,
-} from "../utils/timeexcel";
+} from "../utils/timeExcel";
 import "../timesheet.css";
 
 type Person = {

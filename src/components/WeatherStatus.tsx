@@ -62,6 +62,65 @@ function skyText(code: number): string {
   return "–";
 }
 
+/* ---- Echte Messwerte: GeoSphere Austria (Station Bregenz, ID 11101) ---- */
+const GEO =
+  "https://dataset.api.hub.geosphere.at/v1/station/current/tawes-v1-10min";
+const GEO_STATION = "11101";
+const GEO_WANT = ["TL", "FFAM", "FF", "FFX", "DD", "RR"];
+let geoUnits: Record<string, string> | null = null;
+
+type Measured = {
+  temp: number | null;
+  wind: number | null;
+  gust: number | null;
+  dir: number | null;
+  rain: number | null;
+  time: string | null;
+};
+
+async function fetchMeasured(): Promise<Measured> {
+  if (!geoUnits) {
+    const meta = await fetch(`${GEO}/metadata`).then((r) => {
+      if (!r.ok) throw new Error("meta");
+      return r.json();
+    });
+    geoUnits = {};
+    (meta.parameters ?? []).forEach((p: any) => {
+      geoUnits![p.name] = p.unit ?? "";
+    });
+  }
+  const units = geoUnits;
+  const params = GEO_WANT.filter((k) => k in units);
+  const url = `${GEO}?station_ids=${GEO_STATION}&${params.map((k) => `parameters=${k}`).join("&")}`;
+  const j = await fetch(url).then((r) => {
+    if (!r.ok) throw new Error("data");
+    return r.json();
+  });
+  const par = j.features?.[0]?.properties?.parameters ?? {};
+  const ts: string[] = j.timestamps ?? [];
+  const last = (k: string) => {
+    const d: (number | null)[] | undefined = par[k]?.data;
+    if (!d) return null;
+    for (let i = d.length - 1; i >= 0; i--)
+      if (d[i] != null) return { v: d[i] as number, t: ts[i] };
+    return null;
+  };
+  const kmh = (k: string, v: number) =>
+    (units[k] ?? "").includes("m/s") ? v * 3.6 : v;
+  const temp = last("TL");
+  const windK = last("FFAM") ? "FFAM" : "FF";
+  const wind = last(windK);
+  const gust = last("FFX");
+  return {
+    temp: temp?.v ?? null,
+    wind: wind ? kmh(windK, wind.v) : null,
+    gust: gust ? kmh("FFX", gust.v) : null,
+    dir: last("DD")?.v ?? null,
+    rain: last("RR")?.v ?? null,
+    time: temp?.t ?? wind?.t ?? null,
+  };
+}
+
 const fmtVis = (m: number) =>
   m >= 10000
     ? `${Math.round(m / 1000)} km`
@@ -78,6 +137,7 @@ export default function WeatherStatus({ isPlanner }: { isPlanner: boolean }) {
   const [weather, setWeather] = useState<Current[] | null>(null);
   const [weatherError, setWeatherError] = useState(false);
   const [fetchedAt, setFetchedAt] = useState<Date | null>(null);
+  const [measured, setMeasured] = useState<Measured | null>(null);
 
   const [editing, setEditing] = useState(false);
   const [draftStatus, setDraftStatus] = useState<StatusKey>("regular");
@@ -123,16 +183,31 @@ export default function WeatherStatus({ isPlanner }: { isPlanner: boolean }) {
     }
   }, []);
 
+  const loadMeasured = useCallback(async () => {
+    try {
+      setMeasured(await fetchMeasured());
+    } catch {
+      setMeasured(null);
+    } // dann zeigt die Karte Modelldaten
+  }, []);
+
   useEffect(() => {
     loadStatus();
     loadWeather();
+    loadMeasured();
     const a = setInterval(loadStatus, 2 * 60 * 1000);
-    const b = setInterval(loadWeather, 10 * 60 * 1000);
+    const b = setInterval(
+      () => {
+        loadWeather();
+        loadMeasured();
+      },
+      10 * 60 * 1000,
+    );
     return () => {
       clearInterval(a);
       clearInterval(b);
     };
-  }, [loadStatus, loadWeather]);
+  }, [loadStatus, loadWeather, loadMeasured]);
 
   async function save() {
     setSaving(true);
@@ -223,42 +298,72 @@ export default function WeatherStatus({ isPlanner }: { isPlanner: boolean }) {
       <div className="ws-grid">
         {STATIONS.map((s, i) => {
           const w = weather?.[i];
+          const m =
+            i === 1 && measured && measured.temp != null ? measured : null;
+          const temp = m ? m.temp! : w?.temperature_2m;
+          const wind = m && m.wind != null ? m.wind : w?.wind_speed_10m;
+          const gust = m && m.gust != null ? m.gust : w?.wind_gusts_10m;
+          const dir = m && m.dir != null ? m.dir : w?.wind_direction_10m;
+          const rain = m && m.rain != null ? m.rain : w?.precipitation;
+          const when = m?.time
+            ? new Date(m.time).toLocaleTimeString("de-AT", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : null;
           return (
             <div className="ws-card" key={s.name}>
               <div className="ws-card-head">
                 <b>{s.name}</b>
-                <span>{s.elevation} m</span>
+                <span>
+                  <em
+                    className={`ws-badge ${m ? "ws-badge-live" : "ws-badge-model"}`}
+                  >
+                    {m ? `Messwert${when ? ` ${when} Uhr` : ""}` : "Modell"}
+                  </em>{" "}
+                  {s.elevation} m
+                </span>
               </div>
-              {w ? (
+              {temp != null ? (
                 <>
                   <div className="ws-temp">
-                    {Math.round(w.temperature_2m)}°
-                    <small>{skyText(w.weather_code)}</small>
+                    {Math.round(temp)}°
+                    {w && <small>{skyText(w.weather_code)}</small>}
                   </div>
                   <dl className="ws-facts">
-                    <div>
-                      <dt>Wind</dt>
-                      <dd>
-                        {Math.round(w.wind_speed_10m)} km/h{" "}
-                        {compass(w.wind_direction_10m)}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>Böen</dt>
-                      <dd>{Math.round(w.wind_gusts_10m)} km/h</dd>
-                    </div>
-                    <div>
-                      <dt>Sicht</dt>
-                      <dd>{fmtVis(w.visibility)}</dd>
-                    </div>
-                    <div>
-                      <dt>Wolken</dt>
-                      <dd>{Math.round(w.cloud_cover)} %</dd>
-                    </div>
-                    <div>
-                      <dt>Regen</dt>
-                      <dd>{w.precipitation} mm</dd>
-                    </div>
+                    {wind != null && (
+                      <div>
+                        <dt>Wind</dt>
+                        <dd>
+                          {Math.round(wind)} km/h
+                          {dir != null ? ` ${compass(dir)}` : ""}
+                        </dd>
+                      </div>
+                    )}
+                    {gust != null && (
+                      <div>
+                        <dt>Böen</dt>
+                        <dd>{Math.round(gust)} km/h</dd>
+                      </div>
+                    )}
+                    {w && (
+                      <div>
+                        <dt>Sicht (Modell)</dt>
+                        <dd>{fmtVis(w.visibility)}</dd>
+                      </div>
+                    )}
+                    {w && (
+                      <div>
+                        <dt>Wolken (Modell)</dt>
+                        <dd>{Math.round(w.cloud_cover)} %</dd>
+                      </div>
+                    )}
+                    {rain != null && (
+                      <div>
+                        <dt>{m ? "Regen (10 Min.)" : "Regen"}</dt>
+                        <dd>{Number(rain).toFixed(1).replace(".", ",")} mm</dd>
+                      </div>
+                    )}
                   </dl>
                 </>
               ) : (
@@ -272,10 +377,18 @@ export default function WeatherStatus({ isPlanner }: { isPlanner: boolean }) {
       </div>
 
       <p className="ws-foot">
-        Modelldaten (Open-Meteo)
+        Bregenz: Messwerte der Station Bregenz – Datenquelle:{" "}
+        <a
+          href="https://data.hub.geosphere.at"
+          target="_blank"
+          rel="noreferrer"
+        >
+          GeoSphere Austria
+        </a>
+        . Übrige Werte sind Modelldaten (Open-Meteo
         {fetchedAt &&
-          `, ${fetchedAt.toLocaleTimeString("de-AT", { hour: "2-digit", minute: "2-digit" })} Uhr`}{" "}
-        – keine Messwerte vor Ort. Aktuelle Messwerte:{" "}
+          `, ${fetchedAt.toLocaleTimeString("de-AT", { hour: "2-digit", minute: "2-digit" })} Uhr`}
+        ), keine Messung vor Ort am Berg. Aktuelle Messwerte vom Pfänder:{" "}
         <a href="https://www.wetterring.at" target="_blank" rel="noreferrer">
           wetterring.at
         </a>{" "}

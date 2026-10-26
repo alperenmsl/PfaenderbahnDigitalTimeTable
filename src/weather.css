@@ -45,3 +45,7 @@
 }
 
 .ws-edit-solo { margin-bottom: 4px; }
+
+.ws-badge { font-style: normal; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.ws-badge-live { background: #e3f8ec; color: #067a3a; }
+.ws-badge-model { background: #eef2f7; color: #64748b; }

@@ -1,4 +1,4 @@
-import { Employee, ShiftColor, ScheduleData, DayEvent } from "./src/types";
+import { Employee, ShiftColor, ScheduleData, DayEvent } from "./types";
 
 export const SHIFT_COLORS: Record<
   ShiftColor,

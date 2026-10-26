@@ -19,7 +19,7 @@ import {
   toRow,
   weekdayOf,
 } from "../utils/time";
-import { exportPerson, profileName } from "../utils/timeexcel";
+import { exportPerson, profileName } from "../utils/timeExcel";
 import "../timesheet.css";
 
 type Status = "saving" | "saved" | "error";
