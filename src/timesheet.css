@@ -1,0 +1,102 @@
+/* Zeiterfassung – an das bestehende Pfänderbahn-Design angelehnt */
+.ts-page { max-width: 1180px; margin: 0 auto; padding: 28px 24px 56px; color: #0f172a; }
+
+.ts-hero {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding: 26px 32px; border-radius: 24px; color: #fff;
+  background: linear-gradient(100deg, #0b4aa8 0%, #1368d6 55%, #4aa0ff 100%);
+  box-shadow: 0 14px 34px rgba(19, 104, 214, .25);
+}
+.ts-hero h1 { margin: 0 0 4px; font-size: 26px; font-weight: 800; }
+.ts-hero p { margin: 0; font-size: 14px; opacity: .92; }
+.ts-hero-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.ts-btn { border: 0; border-radius: 999px; padding: 11px 20px; font: inherit; font-weight: 700; font-size: 14px; cursor: pointer; }
+.ts-btn:disabled { opacity: .5; cursor: not-allowed; }
+.ts-btn-white { background: #fff; color: #0b4aa8; }
+.ts-btn-ghost { background: rgba(255,255,255,.18); color: #fff; border: 1px solid rgba(255,255,255,.45); }
+.ts-btn-small { background: #1456f0; color: #fff; padding: 7px 14px; font-size: 13px; }
+.ts-btn-outline { background: #fff; color: #1456f0; border: 1px solid #c7d7fb; margin-left: 6px; }
+.ts-btn:focus-visible, .ts-nav button:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+
+.ts-bar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin: 22px 0 14px; }
+.ts-nav { display: flex; align-items: center; gap: 6px; background: #fff; border-radius: 16px; padding: 6px; box-shadow: 0 4px 16px rgba(15,23,42,.06); }
+.ts-nav strong { min-width: 150px; text-align: center; }
+.ts-nav button { width: 36px; height: 36px; border: 0; border-radius: 12px; background: #eef3ff; color: #1456f0; font-size: 20px; cursor: pointer; }
+.ts-stats { display: flex; gap: 18px; font-size: 14px; color: #475569; }
+.ts-stats b { color: #0f172a; font-size: 16px; }
+
+.ts-notice { background: #fff7e0; border: 1px solid #fde4a0; color: #7a4a00; padding: 12px 16px; border-radius: 14px; margin-bottom: 14px; font-size: 14px; }
+.ts-notice-err { background: #fff0f0; border-color: #ffd0d0; color: #a30000; }
+.ts-hint { color: #a30000; font-size: 13px; margin: 12px 4px 0; }
+
+.ts-card { background: #fff; border-radius: 22px; box-shadow: 0 8px 28px rgba(15,23,42,.07); padding: 8px 12px 12px; }
+.ts-scroll { overflow-x: auto; }
+.ts-table { width: 100%; min-width: 880px; border-collapse: separate; border-spacing: 0 4px; font-size: 14px; }
+.ts-table th { text-align: left; font-size: 12px; color: #64748b; font-weight: 700; padding: 12px 8px 8px; }
+.ts-table td { padding: 5px 8px; background: #fff; vertical-align: middle; }
+.ts-row td:first-child { border-radius: 12px 0 0 12px; }
+.ts-row td:last-child { border-radius: 0 12px 12px 0; }
+.ts-weekend td { background: #f3f6fb; }
+.ts-today td { background: #eaf1ff; }
+.ts-bad td { background: #fff1f1; }
+.ts-day { font-weight: 700; white-space: nowrap; }
+.ts-dn { display: inline-block; min-width: 26px; }
+.ts-block { white-space: nowrap; }
+.ts-dash { margin: 0 4px; color: #94a3b8; }
+.ts-sum { font-weight: 800; font-variant-numeric: tabular-nums; }
+.ts-meal label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.ts-meal span { display: none; }
+.ts-meal input { width: 18px; height: 18px; accent-color: #1456f0; }
+
+.ts-table input[type="time"], .ts-note input {
+  font: inherit; border: 1px solid transparent; background: #f1f5f9; border-radius: 10px; padding: 7px 8px; color: inherit;
+}
+.ts-table input[type="time"] { width: 92px; font-variant-numeric: tabular-nums; }
+.ts-note input { width: 100%; min-width: 150px; }
+.ts-table input:focus { outline: none; border-color: #1456f0; background: #fff; }
+.ts-table input:disabled { opacity: .65; }
+
+.ts-state { width: 28px; text-align: center; }
+.ts-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
+.ts-dot-ok { background: #16a34a; }
+.ts-dot-busy { background: #f59e0b; }
+.ts-warn { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: #dc2626; color: #fff; font-weight: 800; font-size: 12px; cursor: help; }
+
+.ts-table tfoot td { font-weight: 800; padding: 12px 8px 6px; border-top: 2px solid #dbe6ff; background: transparent; }
+.ts-dec { text-align: right; color: #475569; font-weight: 600 !important; }
+
+.ts-admin td { padding: 10px 8px; }
+.ts-admin { min-width: 720px; }
+.ts-actions { white-space: nowrap; text-align: right; }
+.ts-empty { text-align: center; color: #64748b; padding: 28px !important; }
+.ts-pill { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; background: #eef2f7; color: #64748b; }
+.ts-pill-ok { background: #e3f8ec; color: #067a3a; }
+.ts-pill-open { background: #fff1d6; color: #a15c00; }
+
+/* Handy: jede Zeile wird zur Karte */
+@media (max-width: 760px) {
+  .ts-page { padding: 16px 12px 40px; }
+  .ts-hero { padding: 20px; }
+  .ts-card { padding: 8px; }
+  .ts-table:not(.ts-admin) { min-width: 0; display: block; border-spacing: 0; }
+  .ts-table:not(.ts-admin) thead { display: none; }
+  .ts-table:not(.ts-admin) tbody, .ts-table:not(.ts-admin) tfoot { display: block; }
+  .ts-table:not(.ts-admin) tr.ts-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; padding: 12px; margin-bottom: 8px;
+    border-radius: 16px; background: #fff; border: 1px solid #e6edf7; position: relative;
+  }
+  .ts-weekend { background: #f3f6fb !important; }
+  .ts-table:not(.ts-admin) td { padding: 0; background: transparent !important; border-radius: 0 !important; }
+  .ts-day { grid-column: 1 / -1; font-size: 15px; }
+  .ts-block { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; }
+  .ts-block::before { content: attr(data-label); width: 98px; font-size: 12px; color: #64748b; }
+  .ts-block input { flex: 1; width: auto !important; }
+  .ts-meal span { display: inline; }
+  .ts-note { grid-column: 1 / -1; }
+  .ts-state { position: absolute; top: 12px; right: 12px; }
+  .ts-table tfoot tr { display: flex; justify-content: space-between; padding: 10px 6px; }
+  .ts-table tfoot td:first-child { flex: 1; }
+  .ts-table tfoot td[colspan="4"] { }
+  .ts-dec { display: none; }
+}

@@ -8,6 +8,8 @@ import VacationRequest from "./pages/VacationRequest";
 import VacationAdmin from "./pages/VacationAdmin";
 import DayList from "./components/DayList";
 import Logo from "./components/Logo";
+import TimeTracking from "./pages/Timetracking";
+import TimeAdmin from "./pages/Timeadmin";
 import Settings from "./pages/Settings";
 import DashboardWidgets from "./components/DashboardWidgets";
 import "./theme.css";
@@ -436,18 +438,16 @@ function App() {
           .delete()
           .eq("employee_id", empId)
           .eq("date", toISO(date))
-      : await supabase
-          .from("schedule")
-          .upsert(
-            {
-              employee_id: empId,
-              date: toISO(date),
-              shift_color: color,
-              note: cleanNote || null,
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: "employee_id,date" },
-          );
+      : await supabase.from("schedule").upsert(
+          {
+            employee_id: empId,
+            date: toISO(date),
+            shift_color: color,
+            note: cleanNote || null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "employee_id,date" },
+        );
     if (error) return alert("Speichern fehlgeschlagen: " + error.message);
 
     setSchedule((prev) => {
@@ -675,6 +675,32 @@ function App() {
               <span className="nav-full">Urlaubsanträge</span>
               <span className="nav-short">Urlaub</span>
               {unreadVac > 0 && <span className="nav-badge">{unreadVac}</span>}
+            </button>
+          )}
+
+          <button
+            className={`nav-item ${activeNav === "zeiterfassung" ? "active" : ""}`}
+            onClick={() => setActiveNav("zeiterfassung")}
+          >
+            <Icon>
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </Icon>
+            Zeiterfassung
+          </button>
+
+          {isPlanner && (
+            <button
+              className={`nav-item ${activeNav === "zeiten-export" ? "active" : ""}`}
+              onClick={() => setActiveNav("zeiten-export")}
+            >
+              <Icon>
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </Icon>
+              <span className="nav-full">Zeiten Export</span>
+              <span className="nav-short">Zeiten</span>
             </button>
           )}
         </nav>
@@ -1274,6 +1300,9 @@ function App() {
         {activeNav === "urlaubsantraege" && isPlanner && (
           <VacationAdmin onChange={refreshUnread} />
         )}
+
+        {activeNav === "zeiterfassung" && <TimeTracking />}
+        {activeNav === "zeiten-export" && isPlanner && <TimeAdmin />}
 
         {activeNav === "settings" && (
           <Settings
