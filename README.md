@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🚡 Pfänderbahn // Digital TimeTable[cite: 4]
+# 🚡 Pfänderbahn // Digital TimeTable
 
 ### _Next-Gen Employee Management & Operations Portal_
 
